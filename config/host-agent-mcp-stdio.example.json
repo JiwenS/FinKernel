@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "finkernel": {
+      "command": ".\\.venv\\Scripts\\python.exe",
+      "args": [
+        "-m",
+        "finkernel.transport.mcp.stdio_runner"
+      ],
+      "cwd": "C:\\Users\\songj\\Desktop\\FinKernel"
+    }
+  }
+}

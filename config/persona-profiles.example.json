@@ -1,0 +1,20 @@
+{
+  "profiles": [
+    {
+      "profile_id": "growth",
+      "owner_id": "owner-001",
+      "display_name": "Growth Persona",
+      "mandate_summary": "Focus on higher-growth allocations inside the growth account bucket.",
+      "persona_style": "aggressive growth",
+      "bucket_name": "growth-bucket",
+      "risk_budget": "high",
+      "capital_allocation_pct": "0.60",
+      "allowed_accounts": ["paper-account-1"],
+      "allowed_markets": ["us_equities"],
+      "allowed_symbols": ["AAPL", "NVDA", "MSFT", "AMZN", "META", "GOOGL"],
+      "forbidden_symbols": [],
+      "allowed_actions": ["observe", "simulate", "request_execution", "refresh", "reconcile", "cancel"],
+      "hitl_required_actions": ["request_execution", "cancel"]
+    }
+  ]
+}

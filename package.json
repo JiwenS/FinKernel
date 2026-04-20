@@ -1,0 +1,13 @@
+{
+  "name": "finkernel-devtools",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Local developer tooling for FinKernel",
+  "scripts": {
+    "mcp:inspector": "powershell -ExecutionPolicy Bypass -File .\\scripts\\run-mcp-inspector.ps1",
+    "mcp:tools": "powershell -ExecutionPolicy Bypass -File .\\scripts\\e2e-mcp-tools.ps1"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/inspector": "^0.21.2"
+  }
+}

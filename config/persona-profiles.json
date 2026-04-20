@@ -1,0 +1,52 @@
+{
+  "profiles": [
+    {
+      "profile_id": "growth",
+      "owner_id": "owner-001",
+      "display_name": "Growth Persona",
+      "mandate_summary": "Focus on higher-growth allocations inside the growth account bucket.",
+      "persona_style": "aggressive growth",
+      "bucket_name": "growth-bucket",
+      "risk_budget": "high",
+      "capital_allocation_pct": "0.60",
+      "allowed_accounts": ["paper-account-1"],
+      "allowed_markets": ["us_equities"],
+      "allowed_symbols": ["AAPL", "NVDA", "MSFT", "AMZN", "META", "GOOGL"],
+      "forbidden_symbols": [],
+      "allowed_actions": ["observe", "simulate", "request_execution", "refresh", "reconcile", "cancel"],
+      "hitl_required_actions": ["request_execution", "cancel"]
+    },
+    {
+      "profile_id": "low-risk",
+      "owner_id": "owner-001",
+      "display_name": "Low-Risk Persona",
+      "mandate_summary": "Preserve capital inside the defensive account bucket.",
+      "persona_style": "capital preservation",
+      "bucket_name": "defensive-bucket",
+      "risk_budget": "low",
+      "capital_allocation_pct": "0.40",
+      "allowed_accounts": ["paper-account-1"],
+      "allowed_markets": ["us_equities"],
+      "allowed_symbols": ["AAPL", "MSFT", "SPY"],
+      "forbidden_symbols": ["NVDA"],
+      "allowed_actions": ["observe", "simulate", "refresh", "reconcile"],
+      "hitl_required_actions": []
+    },
+    {
+      "profile_id": "research",
+      "owner_id": "owner-001",
+      "display_name": "Research Persona",
+      "mandate_summary": "Observe and analyze without requesting execution.",
+      "persona_style": "research only",
+      "bucket_name": "cross-bucket-research",
+      "risk_budget": "medium",
+      "capital_allocation_pct": "1.00",
+      "allowed_accounts": ["paper-account-1"],
+      "allowed_markets": ["us_equities"],
+      "allowed_symbols": [],
+      "forbidden_symbols": [],
+      "allowed_actions": ["observe", "simulate", "refresh", "reconcile"],
+      "hitl_required_actions": []
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "actor": {
+    "user_id": "local-e2e-user",
+    "account_id": "paper-account-1"
+  },
+  "symbol": "AAPL",
+  "side": "buy",
+  "quantity": 1,
+  "limit_price": "100.00",
+  "idempotency_key": "example-submit-limit-order"
+}

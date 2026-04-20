@@ -1,0 +1,10 @@
+{
+  "name": "Growth Rebalance",
+  "mandate_summary": "Move the profile toward the configured target allocation.",
+  "target_allocation": {
+    "AAPL": "0.80",
+    "MSFT": "0.10",
+    "NVDA": "0.10"
+  },
+  "rebalance_threshold_pct": "0.05"
+}
