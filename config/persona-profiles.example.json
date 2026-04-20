@@ -1,20 +1,57 @@
 {
   "profiles": [
     {
-      "profile_id": "growth",
+      "profile_id": "owner-001-primary-growth",
       "owner_id": "owner-001",
-      "display_name": "Growth Persona",
-      "mandate_summary": "Focus on higher-growth allocations inside the growth account bucket.",
-      "persona_style": "aggressive growth",
-      "bucket_name": "growth-bucket",
+      "version": 1,
+      "status": "active",
+      "display_name": "Primary Growth Risk Profile",
+      "mandate_summary": "Grow long-term capital while preserving flexibility for known near-term cash needs.",
+      "persona_style": "growth oriented",
+      "created_from": "seed",
       "risk_budget": "high",
-      "capital_allocation_pct": "0.60",
-      "allowed_accounts": ["paper-account-1"],
-      "allowed_markets": ["us_equities"],
-      "allowed_symbols": ["AAPL", "NVDA", "MSFT", "AMZN", "META", "GOOGL"],
-      "forbidden_symbols": [],
-      "allowed_actions": ["observe", "simulate", "request_execution", "refresh", "reconcile", "cancel"],
-      "hitl_required_actions": ["request_execution", "cancel"]
+      "forbidden_symbols": ["GME"],
+      "hard_rules": {
+        "financial_objectives": {
+          "objective": "Long-term growth.",
+          "time_horizon": "10+ years.",
+          "liquidity_needs": "Keep meaningful cash available within 6 months."
+        },
+        "risk_guardrails": {
+          "risk_budget": "high",
+          "stress_response": "Hold first and only add risk if conviction remains intact.",
+          "max_drawdown_signal": "10% drawdown starts to feel uncomfortable."
+        },
+        "investment_constraints": {
+          "constraints": "Avoid gambling businesses and highly speculative single-name exposure.",
+          "concentration": "Keep single-name exposure around 15% when possible."
+        },
+        "interaction_model": {
+          "interaction_style": "Concise with proactive trade-off reminders.",
+          "review_cadence": "Review quarterly and after major life or market changes."
+        }
+      },
+      "contextual_rules": [
+        {
+          "rule_text": "Prefer preserving liquid reserve before adding new high-volatility exposure when near-term cash needs exist.",
+          "reason": "Derived from stated liquidity needs.",
+          "confidence": "medium"
+        }
+      ],
+      "long_term_memories": [
+        {
+          "theme": "risk_behavior",
+          "summary": "User wants growth but dislikes deep drawdowns that interrupt long-term plans."
+        }
+      ],
+      "short_term_memories": [
+        {
+          "theme": "near_term_liquidity",
+          "summary": "User may need roughly 10000 dollars inside 6 months."
+        }
+      ],
+      "persona_evidence": [],
+      "persona_markdown": "# Primary Growth Risk Profile\n\nLong-term growth with explicit liquidity and downside guardrails."
     }
   ]
 }

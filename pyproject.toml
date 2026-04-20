@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "finkernel"
 version = "0.1.0"
-description = "Policy-first financial agent middleware MVP"
+description = "Personal risk profile service for profile-aware investment guidance"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -15,8 +15,6 @@ dependencies = [
   "pydantic-settings>=2.13,<3",
   "httpx>=0.28,<0.29",
   "psycopg[binary]>=3.3,<3.4",
-  "redis>=7.4,<8",
-  "discord.py>=2.7,<3",
   "mcp>=1,<2",
   "pgvector>=0.4,<0.5",
 ]

@@ -43,39 +43,14 @@ def init_database(session_factory: sessionmaker[Session], settings: Settings) ->
 def _apply_lightweight_migrations(engine) -> None:
     inspector = inspect(engine)
     migrations = {
-        "workflow_requests": {
-            "owner_id": "VARCHAR(64)",
-            "profile_id": "VARCHAR(64)",
-            "profile_version": "INTEGER",
-            "reconciliation_status": "VARCHAR(32)",
-            "reconciliation_reason": "TEXT",
-            "last_reconciled_at": "TIMESTAMP",
-        },
-        "strategies": {
-            "profile_version": "INTEGER DEFAULT 1",
-        },
-        "suggestions": {
-            "profile_version": "INTEGER DEFAULT 1",
-        },
-        "audit_events": {
-            "profile_id": "VARCHAR(64)",
-            "profile_version": "INTEGER",
-        },
         "profile_versions": {
             "display_name": "VARCHAR(128)",
             "mandate_summary": "TEXT",
             "persona_style": "VARCHAR(128)",
             "created_from": "VARCHAR(64)",
-            "bucket_name": "VARCHAR(128)",
             "supersedes_profile_version": "INTEGER",
             "risk_budget": "VARCHAR(32)",
-            "capital_allocation_pct": "NUMERIC(10, 6)",
-            "allowed_accounts": "JSON",
-            "allowed_markets": "JSON",
-            "allowed_symbols": "JSON",
             "forbidden_symbols": "JSON",
-            "allowed_actions": "JSON",
-            "hitl_required_actions": "JSON",
             "objective_text": "TEXT",
             "horizon_text": "TEXT",
             "liquidity_text": "TEXT",
@@ -89,6 +64,8 @@ def _apply_lightweight_migrations(engine) -> None:
     }
     statements: list[str] = []
     for table_name, additions in migrations.items():
+        if table_name not in inspector.get_table_names():
+            continue
         existing = {column["name"] for column in inspector.get_columns(table_name)}
         statements.extend(
             f"ALTER TABLE {table_name} ADD COLUMN {name} {column_type}"

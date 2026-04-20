@@ -20,20 +20,18 @@ def main() -> None:
     integration_body = read("docs/upper-layer-agent-integration.md")
 
     assert "get_profile_onboarding_status" in skill_body
-    assert "create_strategy_from_text" in skill_body
-    assert "run_advisor_once" in skill_body
+    assert "get_risk_profile_summary" in skill_body
+    assert "save_profile_persona_markdown" in skill_body
     assert "Do not give generic ETF / T-bill / market advice first" in skill_body
 
     assert "get_profile_onboarding_status" in routing_body
     assert "start_profile_discovery" in routing_body
-    assert "get_risk_summary" in routing_body
-    assert "create_strategy_from_text" in routing_body
-    assert "run_advisor_once" in routing_body
+    assert "get_risk_profile_summary" in routing_body
     assert "web research" in routing_body.lower()
 
     assert "get_profile_onboarding_status" in integration_body
     assert "get_profile_persona_markdown" in integration_body
-    assert "get_risk_summary" in integration_body
+    assert "get_risk_profile_summary" in integration_body
 
     tmp_dir = ROOT / "tmp_mcp"
     tmp_dir.mkdir(exist_ok=True)
@@ -43,23 +41,16 @@ def main() -> None:
     settings = Settings(
         environment="test",
         database_url=f"sqlite+pysqlite:///{tmp_dir / 'routing-contract.db'}",
-        redis_url=None,
         enable_pgvector=False,
-        discord_bot_token=None,
-        discord_channel_id=None,
-        discord_allowed_user_ids_csv="discord-user",
-        max_limit_order_notional=10000.0,
-        max_limit_order_qty=100,
         profile_store_path=str(profiles_path),
-        default_profile_account_id="acct-1",
     )
     instructions = build_runtime(settings)["mcp_server"].instructions.lower()
     assert "first check profile onboarding status" in instructions
     assert "start profile discovery" in instructions
     assert "persona markdown" in instructions
-    assert "risk summary" in instructions
+    assert "risk profile summary" in instructions
 
-    print("investment-routing-contract: OK")
+    print("risk-profile-routing-contract: OK")
 
 
 if __name__ == "__main__":

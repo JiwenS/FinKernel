@@ -19,6 +19,7 @@ from finkernel.schemas.profile import (
     PersonaSourcePacket,
     ProfileMemorySearchResponse,
     ProfileOnboardingStatus,
+    RiskProfileSummary,
     SavePersonaMarkdownRequest,
 )
 from finkernel.services.profile_discovery import ProfileDiscoveryService
@@ -29,19 +30,12 @@ router = APIRouter(tags=["profiles"])
 
 
 @router.get("/profiles/onboarding-status", response_model=ProfileOnboardingStatus)
-def get_profile_onboarding_status(
-    owner_id: str | None = None,
-    profile_store: ProfileStore = Depends(get_profile_store),
-) -> ProfileOnboardingStatus:
+def get_profile_onboarding_status(owner_id: str | None = None, profile_store: ProfileStore = Depends(get_profile_store)) -> ProfileOnboardingStatus:
     return profile_store.get_onboarding_status(owner_id=owner_id)
 
 
 @router.get("/profiles/{profile_id}", response_model=PersonaProfile)
-def get_profile(
-    profile_id: str,
-    version: int | None = None,
-    discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service),
-) -> PersonaProfile:
+def get_profile(profile_id: str, version: int | None = None, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> PersonaProfile:
     try:
         return discovery_service.get_profile(profile_id, version=version)
     except Exception as exc:
@@ -49,12 +43,17 @@ def get_profile(
         raise
 
 
+@router.get("/profiles/{profile_id}/risk-summary", response_model=RiskProfileSummary)
+def get_risk_profile_summary(profile_id: str, version: int | None = None, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> RiskProfileSummary:
+    try:
+        return discovery_service.get_risk_profile_summary(profile_id, version=version)
+    except Exception as exc:
+        raise_for_profile_error(exc)
+        raise
+
+
 @router.get("/profiles/{profile_id}/persona.md", response_class=Response)
-def get_profile_persona_markdown(
-    profile_id: str,
-    version: int | None = None,
-    discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service),
-) -> Response:
+def get_profile_persona_markdown(profile_id: str, version: int | None = None, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> Response:
     try:
         profile = discovery_service.get_profile(profile_id, version=version)
         return Response(content=profile.persona_markdown or "", media_type="text/markdown")
@@ -64,11 +63,7 @@ def get_profile_persona_markdown(
 
 
 @router.get("/profiles/{profile_id}/persona-sources", response_model=PersonaSourcePacket)
-def get_profile_persona_sources(
-    profile_id: str,
-    version: int | None = None,
-    discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service),
-) -> PersonaSourcePacket:
+def get_profile_persona_sources(profile_id: str, version: int | None = None, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> PersonaSourcePacket:
     try:
         return discovery_service.get_persona_source_packet(profile_id, version=version)
     except Exception as exc:
@@ -77,27 +72,16 @@ def get_profile_persona_sources(
 
 
 @router.put("/profiles/{profile_id}/persona", response_model=PersonaProfile)
-def save_profile_persona_markdown(
-    profile_id: str,
-    payload: SavePersonaMarkdownRequest,
-    discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service),
-) -> PersonaProfile:
+def save_profile_persona_markdown(profile_id: str, payload: SavePersonaMarkdownRequest, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> PersonaProfile:
     try:
-        return discovery_service.save_persona_markdown(
-            profile_id=profile_id,
-            persona_markdown=payload.persona_markdown,
-            version=payload.version,
-        )
+        return discovery_service.save_persona_markdown(profile_id=profile_id, persona_markdown=payload.persona_markdown, version=payload.version)
     except Exception as exc:
         raise_for_profile_error(exc)
         raise
 
 
 @router.get("/profiles/{profile_id}/versions", response_model=list[PersonaProfile])
-def list_profile_versions(
-    profile_id: str,
-    discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service),
-) -> list[PersonaProfile]:
+def list_profile_versions(profile_id: str, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> list[PersonaProfile]:
     try:
         return discovery_service.list_profile_versions(profile_id)
     except Exception as exc:
@@ -106,18 +90,12 @@ def list_profile_versions(
 
 
 @router.post("/profiles/discovery/sessions", response_model=DiscoverySession)
-def start_profile_discovery(
-    payload: StartDiscoveryRequest,
-    discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service),
-) -> DiscoverySession:
+def start_profile_discovery(payload: StartDiscoveryRequest, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> DiscoverySession:
     return discovery_service.start_discovery(owner_id=payload.owner_id, preferred_profile_name=payload.preferred_profile_name)
 
 
 @router.get("/profiles/discovery/sessions/{session_id}/next-question", response_model=DiscoveryQuestion | None)
-def get_next_profile_question(
-    session_id: str,
-    discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service),
-) -> DiscoveryQuestion | None:
+def get_next_profile_question(session_id: str, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> DiscoveryQuestion | None:
     try:
         return discovery_service.get_next_question(session_id)
     except Exception as exc:
@@ -126,11 +104,7 @@ def get_next_profile_question(
 
 
 @router.post("/profiles/discovery/sessions/{session_id}/answers", response_model=DiscoverySession)
-def submit_profile_discovery_answer(
-    session_id: str,
-    payload: SubmitDiscoveryAnswerRequest,
-    discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service),
-) -> DiscoverySession:
+def submit_profile_discovery_answer(session_id: str, payload: SubmitDiscoveryAnswerRequest, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> DiscoverySession:
     try:
         return discovery_service.submit_answer(session_id=session_id, answer_text=payload.answer, question_id=payload.question_id)
     except Exception as exc:
@@ -139,10 +113,7 @@ def submit_profile_discovery_answer(
 
 
 @router.post("/profiles/discovery/sessions/{session_id}/draft", response_model=ProfileDraft)
-def generate_profile_draft(
-    session_id: str,
-    discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service),
-) -> ProfileDraft:
+def generate_profile_draft(session_id: str, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> ProfileDraft:
     try:
         return discovery_service.generate_draft(session_id)
     except Exception as exc:
@@ -151,11 +122,7 @@ def generate_profile_draft(
 
 
 @router.post("/profiles/discovery/drafts/{draft_id}/confirm", response_model=dict)
-def confirm_profile_draft(
-    draft_id: str,
-    payload: ConfirmProfileDraftRequest,
-    discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service),
-) -> dict:
+def confirm_profile_draft(draft_id: str, payload: ConfirmProfileDraftRequest, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> dict:
     try:
         profile = discovery_service.confirm_draft(draft_id=draft_id, payload=payload)
         return {"profile": profile.model_dump(mode="json")}
@@ -165,11 +132,7 @@ def confirm_profile_draft(
 
 
 @router.post("/profiles/{profile_id}/review", response_model=DiscoverySession)
-def review_profile(
-    profile_id: str,
-    payload: ReviewProfileRequest,
-    discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service),
-) -> DiscoverySession:
+def review_profile(profile_id: str, payload: ReviewProfileRequest, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> DiscoverySession:
     try:
         return discovery_service.start_review(profile_id=profile_id, payload=payload)
     except Exception as exc:
@@ -178,11 +141,7 @@ def review_profile(
 
 
 @router.post("/profiles/{profile_id}/memories", response_model=PersonaProfile)
-def append_profile_memory(
-    profile_id: str,
-    payload: AppendProfileMemoryRequest,
-    discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service),
-) -> PersonaProfile:
+def append_profile_memory(profile_id: str, payload: AppendProfileMemoryRequest, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> PersonaProfile:
     try:
         return discovery_service.append_memory(
             profile_id=profile_id,
@@ -198,13 +157,7 @@ def append_profile_memory(
 
 
 @router.get("/profiles/{profile_id}/memories/search", response_model=ProfileMemorySearchResponse)
-def search_profile_memories(
-    profile_id: str,
-    query: str,
-    memory_kind: str | None = None,
-    include_expired: bool = False,
-    discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service),
-) -> ProfileMemorySearchResponse:
+def search_profile_memories(profile_id: str, query: str, memory_kind: str | None = None, include_expired: bool = False, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> ProfileMemorySearchResponse:
     try:
         return ProfileMemorySearchResponse(
             items=discovery_service.search_memory(
@@ -220,10 +173,7 @@ def search_profile_memories(
 
 
 @router.post("/profiles/{profile_id}/memories/distill", response_model=DistilledProfileMemoryResponse)
-def distill_profile_memories(
-    profile_id: str,
-    discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service),
-) -> DistilledProfileMemoryResponse:
+def distill_profile_memories(profile_id: str, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> DistilledProfileMemoryResponse:
     try:
         return discovery_service.distill_memory(profile_id=profile_id)
     except Exception as exc:

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from decimal import Decimal
 from enum import Enum
 
 from pydantic import BaseModel, Field
 
-from finkernel.schemas.profile import PersonaProfile, ProfileAction
+from finkernel.schemas.profile import PersonaProfile
 
 
 class DiscoverySessionStatus(str, Enum):
@@ -155,11 +154,7 @@ class SubmitDiscoveryAnswerRequest(BaseModel):
 
 class ConfirmProfileDraftRequest(BaseModel):
     profile_id: str | None = None
-    allowed_accounts: list[str] | None = None
-    allowed_markets: list[str] | None = None
-    capital_allocation_pct: Decimal | None = Field(default=None, gt=0, le=1)
-    allowed_actions: list[ProfileAction] | None = None
-    hitl_required_actions: list[ProfileAction] | None = None
+    display_name: str | None = None
     persona_markdown: str | None = None
 
 

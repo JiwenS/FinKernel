@@ -1,8 +1,0 @@
-{
-  "account_id": "paper-account-1",
-  "symbol": "AAPL",
-  "side": "buy",
-  "quantity": "1",
-  "limit_price": "100.00",
-  "market": "us_equities"
-}

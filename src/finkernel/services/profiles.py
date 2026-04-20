@@ -171,7 +171,6 @@ class ProfileStore:
             versions = self.repository.list_for_profile(session, profile_id)
             if not versions:
                 raise KeyError(f"Unknown profile_id: {profile_id}")
-            target_model = None
             if version is not None:
                 target_model = next((model for model in versions if model.version == version), None)
                 if target_model is None:
@@ -275,8 +274,7 @@ class ProfileStore:
         with self._session_scope() as session:
             if self.repository.count(session) > 0:
                 return
-            seed_profiles = self._load_seed_profiles()
-            for profile in seed_profiles:
+            for profile in self._load_seed_profiles():
                 stored = self.repository.add(session, self._to_model(profile))
                 self._replace_related_content(session, profile, stored.version)
 
@@ -302,16 +300,9 @@ class ProfileStore:
             mandate_summary=profile.mandate_summary,
             persona_style=profile.persona_style,
             created_from=profile.created_from,
-            bucket_name=profile.bucket_name,
             supersedes_profile_version=profile.supersedes_profile_version,
             risk_budget=profile.risk_budget.value,
-            capital_allocation_pct=profile.capital_allocation_pct,
-            allowed_accounts=profile.allowed_accounts,
-            allowed_markets=profile.allowed_markets,
-            allowed_symbols=profile.allowed_symbols,
             forbidden_symbols=profile.forbidden_symbols,
-            allowed_actions=[item.value for item in profile.allowed_actions],
-            hitl_required_actions=[item.value for item in profile.hitl_required_actions],
             objective_text=profile.hard_rules.get("financial_objectives", {}).get("objective"),
             horizon_text=profile.hard_rules.get("financial_objectives", {}).get("time_horizon"),
             liquidity_text=profile.hard_rules.get("financial_objectives", {}).get("liquidity_needs"),
@@ -330,11 +321,7 @@ class ProfileStore:
     def _from_model(self, session: Session, model: ProfileVersionModel) -> PersonaProfile:
         payload = model.payload or {}
         contextual_rules = [
-            {
-                "rule_text": item.rule_text,
-                "reason": item.reason_text,
-                "confidence": item.confidence,
-            }
+            {"rule_text": item.rule_text, "reason": item.reason_text, "confidence": item.confidence}
             for item in self.contextual_rule_repository.list_for_profile_version(session, model.profile_id, model.version)
         ]
         long_term_memories = [
@@ -357,7 +344,7 @@ class ProfileStore:
             for item in self.short_memory_repository.list_for_profile_version(session, model.profile_id, model.version)
         ]
         short_term_memories = self._active_or_all_short_memories(short_term_memories, include_expired=False)
-        profile = PersonaProfile(
+        return PersonaProfile(
             profile_id=model.profile_id,
             owner_id=model.owner_id,
             version=model.version,
@@ -366,16 +353,9 @@ class ProfileStore:
             mandate_summary=model.mandate_summary or payload.get("mandate_summary") or "",
             persona_style=model.persona_style or payload.get("persona_style") or "default",
             created_from=model.created_from or payload.get("created_from"),
-            bucket_name=model.bucket_name or payload.get("bucket_name"),
             supersedes_profile_version=model.supersedes_profile_version or payload.get("supersedes_profile_version"),
             risk_budget=model.risk_budget or payload.get("risk_budget") or "medium",
-            capital_allocation_pct=model.capital_allocation_pct or payload.get("capital_allocation_pct") or "1.0",
-            allowed_accounts=model.allowed_accounts or payload.get("allowed_accounts") or [],
-            allowed_markets=model.allowed_markets or payload.get("allowed_markets") or [],
-            allowed_symbols=model.allowed_symbols or payload.get("allowed_symbols") or [],
             forbidden_symbols=model.forbidden_symbols or payload.get("forbidden_symbols") or [],
-            allowed_actions=model.allowed_actions or payload.get("allowed_actions") or [],
-            hitl_required_actions=model.hitl_required_actions or payload.get("hitl_required_actions") or [],
             hard_rules={
                 "financial_objectives": {
                     "objective": model.objective_text or payload.get("hard_rules", {}).get("financial_objectives", {}).get("objective"),
@@ -402,7 +382,6 @@ class ProfileStore:
             persona_evidence=payload.get("persona_evidence") or [],
             persona_markdown=payload.get("persona_markdown"),
         )
-        return profile
 
     def _replace_related_content(self, session: Session, profile: PersonaProfile, profile_version: int) -> None:
         self.contextual_rule_repository.replace_for_profile_version(

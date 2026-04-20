@@ -1,20 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
-
-
-class ProfileAction(str, Enum):
-    OBSERVE = "observe"
-    SIMULATE = "simulate"
-    REQUEST_EXECUTION = "request_execution"
-    REFRESH = "refresh"
-    RECONCILE = "reconcile"
-    CANCEL = "cancel"
 
 
 class RiskBudget(str, Enum):
@@ -48,38 +38,14 @@ class PersonaProfile(BaseModel):
     persona_style: str = Field(min_length=1)
     created_from: str | None = None
     supersedes_profile_version: int | None = Field(default=None, ge=1)
-    bucket_name: str | None = None
     risk_budget: RiskBudget
-    capital_allocation_pct: Decimal = Field(gt=0, le=1)
-    allowed_accounts: list[str] = Field(min_length=1)
-    allowed_markets: list[str] = Field(default_factory=list)
-    allowed_symbols: list[str] = Field(default_factory=list)
     forbidden_symbols: list[str] = Field(default_factory=list)
-    allowed_actions: list[ProfileAction] = Field(default_factory=list)
-    hitl_required_actions: list[ProfileAction] = Field(default_factory=list)
     hard_rules: dict[str, Any] = Field(default_factory=dict)
     contextual_rules: list[dict[str, Any]] = Field(default_factory=list)
     long_term_memories: list[dict[str, Any]] = Field(default_factory=list)
     short_term_memories: list[dict[str, Any]] = Field(default_factory=list)
     persona_evidence: list[dict[str, Any]] = Field(default_factory=list)
     persona_markdown: str | None = None
-
-    def allows_account(self, account_id: str) -> bool:
-        return account_id in self.allowed_accounts
-
-    def allows_market(self, market: str) -> bool:
-        return not self.allowed_markets or market in self.allowed_markets
-
-    def allows_symbol(self, symbol: str) -> bool:
-        normalized = symbol.upper()
-        if normalized in {s.upper() for s in self.forbidden_symbols}:
-            return False
-        if not self.allowed_symbols:
-            return True
-        return normalized in {s.upper() for s in self.allowed_symbols}
-
-    def allows_action(self, action: ProfileAction) -> bool:
-        return action in self.allowed_actions
 
     @property
     def is_active(self) -> bool:
@@ -113,6 +79,27 @@ class DistilledProfileMemoryResponse(BaseModel):
     version: int
     long_term_summary: list[str] = Field(default_factory=list)
     short_term_summary: list[str] = Field(default_factory=list)
+
+
+class RiskProfileSummary(BaseModel):
+    profile_id: str
+    owner_id: str
+    version: int
+    display_name: str
+    mandate_summary: str
+    risk_budget: RiskBudget
+    objective: str | None = None
+    time_horizon: str | None = None
+    liquidity_needs: str | None = None
+    stress_response: str | None = None
+    loss_threshold: str | None = None
+    concentration_guidance: str | None = None
+    interaction_style: str | None = None
+    review_cadence: str | None = None
+    hard_constraints: list[str] = Field(default_factory=list)
+    contextual_rule_highlights: list[str] = Field(default_factory=list)
+    long_term_memory_highlights: list[str] = Field(default_factory=list)
+    short_term_memory_highlights: list[str] = Field(default_factory=list)
 
 
 class SavePersonaMarkdownRequest(BaseModel):

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-import re
 from datetime import UTC, datetime
-from decimal import Decimal
+import re
 from typing import Any, Iterator
 from uuid import uuid4
 
@@ -16,23 +15,22 @@ from finkernel.schemas.discovery import (
     DiscoveryAnswer,
     DiscoveryDimension,
     DiscoveryQuestion,
-    DiscoverySession,
-    DiscoverySessionStatus,
     DiscoveryQuestionSource,
     DiscoveryQuestionType,
+    DiscoverySession,
+    DiscoverySessionStatus,
     DimensionState,
     DraftReadinessAssessment,
     NarrativeMemoryCandidate,
     ProfileDraft,
     ReviewProfileRequest,
 )
-from finkernel.schemas.profile import PersonaProfile, ProfileAction, ProfileLifecycleStatus, RiskBudget
-from finkernel.schemas.profile import DistilledProfileMemoryResponse, MemoryKind, PersonaSourcePacket
+from finkernel.schemas.profile import DistilledProfileMemoryResponse, MemoryKind, PersonaProfile, PersonaSourcePacket, ProfileLifecycleStatus, RiskBudget, RiskProfileSummary
 from finkernel.services.persona_markdown import build_persona_evidence_from_answers
-from finkernel.storage.models import DiscoverySessionModel, ProfileDraftModel
-from finkernel.storage.repositories import DiscoverySessionRepository, ProfileDraftRepository
 from finkernel.services.profiles import ProfileStore
 from finkernel.services.question_planner import QuestionPlanner, build_empty_dimension_states
+from finkernel.storage.models import DiscoverySessionModel, ProfileDraftModel
+from finkernel.storage.repositories import DiscoverySessionRepository, ProfileDraftRepository
 
 
 class DiscoveryNotReadyError(ValueError):
@@ -101,9 +99,7 @@ class ProfileDiscoveryService:
 
     def submit_answer(self, *, session_id: str, answer_text: str, question_id: str | None = None) -> DiscoverySession:
         session, current_question = self._load_session_with_question(session_id)
-        question = current_question
-        if question_id is not None:
-            question = self._find_question(session_id=session_id, question_id=question_id)
+        question = current_question if question_id is None else self._find_question(session_id=session_id, question_id=question_id)
         if question is None:
             raise KeyError(f"No active question is available for discovery session {session_id}.")
 
@@ -160,6 +156,49 @@ class ProfileDiscoveryService:
             long_term_memories=profile.long_term_memories,
             short_term_memories=profile.short_term_memories,
             contextual_rules=profile.contextual_rules,
+        )
+
+    def get_risk_profile_summary(self, profile_id: str, *, version: int | None = None) -> RiskProfileSummary:
+        profile = self.get_profile(profile_id, version=version)
+        financial = profile.hard_rules.get("financial_objectives", {})
+        risk = profile.hard_rules.get("risk_guardrails", {})
+        constraints = profile.hard_rules.get("investment_constraints", {})
+        interaction = profile.hard_rules.get("interaction_model", {})
+        hard_constraints = []
+        if constraints.get("constraints"):
+            hard_constraints.append(str(constraints["constraints"]))
+        hard_constraints.extend(profile.forbidden_symbols)
+        return RiskProfileSummary(
+            profile_id=profile.profile_id,
+            owner_id=profile.owner_id,
+            version=profile.version,
+            display_name=profile.display_name,
+            mandate_summary=profile.mandate_summary,
+            risk_budget=profile.risk_budget,
+            objective=financial.get("objective"),
+            time_horizon=financial.get("time_horizon"),
+            liquidity_needs=financial.get("liquidity_needs"),
+            stress_response=risk.get("stress_response"),
+            loss_threshold=risk.get("max_drawdown_signal"),
+            concentration_guidance=constraints.get("concentration"),
+            interaction_style=interaction.get("interaction_style"),
+            review_cadence=interaction.get("review_cadence"),
+            hard_constraints=hard_constraints,
+            contextual_rule_highlights=[
+                str(item.get("rule_text") or item.get("rule") or "").strip()
+                for item in profile.contextual_rules
+                if str(item.get("rule_text") or item.get("rule") or "").strip()
+            ],
+            long_term_memory_highlights=[
+                str(item.get("summary") or item.get("content_text") or "").strip()
+                for item in profile.long_term_memories
+                if str(item.get("summary") or item.get("content_text") or "").strip()
+            ][:3],
+            short_term_memory_highlights=[
+                str(item.get("summary") or item.get("content_text") or "").strip()
+                for item in profile.short_term_memories
+                if str(item.get("summary") or item.get("content_text") or "").strip()
+            ][:3],
         )
 
     def list_profile_versions(self, profile_id: str) -> list[PersonaProfile]:
@@ -222,13 +261,9 @@ class ProfileDiscoveryService:
         final_profile = suggested.model_copy(
             update={
                 "profile_id": profile_id,
+                "display_name": payload.display_name or suggested.display_name,
                 "version": next_version,
                 "status": ProfileLifecycleStatus.ACTIVE,
-                "allowed_accounts": payload.allowed_accounts or suggested.allowed_accounts or [self.settings.default_profile_account_id],
-                "allowed_markets": payload.allowed_markets or suggested.allowed_markets or ["us_equities"],
-                "capital_allocation_pct": payload.capital_allocation_pct or suggested.capital_allocation_pct,
-                "allowed_actions": payload.allowed_actions or suggested.allowed_actions or self._default_allowed_actions(),
-                "hitl_required_actions": payload.hitl_required_actions or suggested.hitl_required_actions or self._default_hitl_actions(),
                 "supersedes_profile_version": max((profile.version for profile in existing_versions if profile.is_active), default=None),
                 "persona_markdown": payload.persona_markdown or suggested.persona_markdown,
             }
@@ -236,19 +271,6 @@ class ProfileDiscoveryService:
         self.profile_store.append_profile(final_profile)
         self._mark_session_completed(draft.session_id)
         return final_profile
-
-    def _default_allowed_actions(self) -> list[ProfileAction]:
-        return [
-            ProfileAction.OBSERVE,
-            ProfileAction.SIMULATE,
-            ProfileAction.REQUEST_EXECUTION,
-            ProfileAction.REFRESH,
-            ProfileAction.RECONCILE,
-            ProfileAction.CANCEL,
-        ]
-
-    def _default_hitl_actions(self) -> list[ProfileAction]:
-        return [ProfileAction.REQUEST_EXECUTION, ProfileAction.CANCEL]
 
     def _seed_dimension_states(self) -> list[DimensionState]:
         states = build_empty_dimension_states()
@@ -323,14 +345,8 @@ class ProfileDiscoveryService:
             (DiscoveryDimension.LOSS_THRESHOLD, risk.get("max_drawdown_signal") or "Existing loss threshold unchanged."),
             (DiscoveryDimension.CONSTRAINTS, constraints.get("constraints") or self._serialize_list(profile.forbidden_symbols) or "Existing constraints unchanged."),
             (DiscoveryDimension.CONCENTRATION, constraints.get("concentration") or "Existing concentration guidance unchanged."),
-            (
-                DiscoveryDimension.INTERACTION_STYLE,
-                interaction.get("interaction_style") or "Keep existing interaction style.",
-            ),
-            (
-                DiscoveryDimension.REVIEW_CADENCE,
-                interaction.get("review_cadence") or "Keep existing review cadence.",
-            ),
+            (DiscoveryDimension.INTERACTION_STYLE, interaction.get("interaction_style") or "Keep existing interaction style."),
+            (DiscoveryDimension.REVIEW_CADENCE, interaction.get("review_cadence") or "Keep existing review cadence."),
         ]
 
     def _seed_background_summary(self, profile: PersonaProfile, *, payload: ReviewProfileRequest) -> str:
@@ -347,7 +363,7 @@ class ProfileDiscoveryService:
 
     def _build_draft(self, session: DiscoverySession, readiness: DraftReadinessAssessment) -> ProfileDraft:
         answer_map = {answer.dimension: answer.answer_text for answer in session.answers}
-        preferred_name = session.preferred_profile_name or "Primary Profile"
+        preferred_name = session.preferred_profile_name or "Primary Risk Profile"
         profile_id = self._slugify_profile_id(preferred_name, session.owner_id)
         risk_budget = self._derive_risk_budget(answer_map)
         mandate_summary = self._build_mandate_summary(answer_map, risk_budget)
@@ -366,15 +382,8 @@ class ProfileDiscoveryService:
             mandate_summary=mandate_summary,
             persona_style=self._derive_persona_style(risk_budget, answer_map),
             created_from="guided_discovery",
-            bucket_name=f"{profile_id}-bucket",
             risk_budget=risk_budget,
-            capital_allocation_pct=Decimal("1.0"),
-            allowed_accounts=[self.settings.default_profile_account_id],
-            allowed_markets=["us_equities"],
-            allowed_symbols=sorted(self.settings.allowed_symbols),
             forbidden_symbols=forbidden_symbols,
-            allowed_actions=self._default_allowed_actions(),
-            hitl_required_actions=self._default_hitl_actions(),
             hard_rules=hard_rules,
             contextual_rules=[item.model_dump(mode="json") for item in contextual_rules],
             long_term_memories=[item.model_dump(mode="json") for item in long_term_memories],
@@ -451,35 +460,17 @@ class ProfileDiscoveryService:
         ):
             text = answer_map.get(dimension)
             if text and len(text.split()) >= 8:
-                items.append(
-                    NarrativeMemoryCandidate(
-                        summary=text,
-                        theme=theme,
-                        source_dimension=dimension,  # type: ignore[arg-type]
-                    )
-                )
+                items.append(NarrativeMemoryCandidate(summary=text, theme=theme, source_dimension=dimension))
         return items
 
     def _build_short_term_memories(self, answer_map: dict[DiscoveryDimension, str]) -> list[dict[str, str]]:
         items: list[dict[str, str]] = []
         liquidity = answer_map.get(DiscoveryDimension.LIQUIDITY)
         if liquidity and re.search(r"\b(within|month|months|week|weeks|soon|upcoming|next)\b", liquidity, re.IGNORECASE):
-            items.append(
-                {
-                    "theme": "near_term_liquidity",
-                    "summary": liquidity,
-                    "source_dimension": DiscoveryDimension.LIQUIDITY.value,
-                }
-            )
+            items.append({"theme": "near_term_liquidity", "summary": liquidity, "source_dimension": DiscoveryDimension.LIQUIDITY.value})
         background = answer_map.get(DiscoveryDimension.BACKGROUND)
         if background and re.search(r"\b(review trigger|this quarter|this month|recent|currently|right now)\b", background, re.IGNORECASE):
-            items.append(
-                {
-                    "theme": "current_context",
-                    "summary": background,
-                    "source_dimension": DiscoveryDimension.BACKGROUND.value,
-                }
-            )
+            items.append({"theme": "current_context", "summary": background, "source_dimension": DiscoveryDimension.BACKGROUND.value})
         return items
 
     def _derive_risk_budget(self, answer_map: dict[DiscoveryDimension, str]) -> RiskBudget:
