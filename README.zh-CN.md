@@ -10,9 +10,9 @@
 ![MCP](https://img.shields.io/badge/MCP-host_agent_ready-111827?style=flat-square)
 ![Focus](https://img.shields.io/badge/Focus-persona_%26_risk_profile-7C3AED?style=flat-square)
 
-FinKernel is a Python/FastAPI service focused on one job: building and maintaining a **personal risk profile** that downstream agents and apps can trust before giving investment guidance.
+FinKernel 是一个基于 Python / FastAPI 的服务，当前只专注做一件事：构建并维护**个人风险画像**，让下游 agent 和应用在给出投资相关建议前，能够先获得可信的 persona 上下文。
 
-The product surface is intentionally narrow:
+当前产品面刻意保持收敛：
 
 - profile onboarding
 - guided risk-profile discovery
@@ -21,25 +21,25 @@ The product surface is intentionally narrow:
 - long-term and short-term memory capture
 - MCP + HTTP access for host agents
 
-Everything outside that scope has been removed from the active product path.
+当前阶段之外的能力，都已经从主路径中移除。
 
-## Current Delivery Phase
+## 当前阶段
 
-Phase 1 is the personal risk profile foundation.
+Phase 1 的目标是先把个人风险画像基础打稳。
 
-In this phase, FinKernel only owns onboarding, discovery, review/versioning,
-persona artifacts, and profile memory needed for profile-aware investment
-guidance. Broader investment planning, recommendation generation, market
-research orchestration, and execution flows are outside the current phase.
+在这个阶段里，FinKernel 只负责 onboarding、discovery、review/versioning、
+persona artifacts，以及为 profile-aware investment guidance 提供所需的
+profile memory。更广义的投资规划、推荐生成、市场研究编排和执行流程，
+都不在当前范围内。
 
-## Read This First
+## 建议先读
 
-- Language switch:
+- 语言切换：
   - English: `README.md`
-  - Simplified Chinese: `README.zh-CN.md`
-- Docs index:
+  - 简体中文：`README.zh-CN.md`
+- 文档入口：
   - English: `docs/README.en.md`
-  - Simplified Chinese: `docs/README.zh-CN.md`
+  - 简体中文：`docs/README.zh-CN.md`
 - `docs/README.md`
 - `docs/setup-and-run.md`
 - `docs/persona-profiles.md`
@@ -51,9 +51,9 @@ research orchestration, and execution flows are outside the current phase.
 - `prompts/finkernel_system_routing.md`
 - `SKILL.md`
 
-## Core APIs
+## 核心接口
 
-HTTP:
+HTTP：
 
 - `GET /api/health`
 - `GET /api/profiles/onboarding-status`
@@ -74,36 +74,36 @@ HTTP:
 - `GET /api/profiles/{profile_id}/memories/search`
 - `POST /api/profiles/{profile_id}/memories/distill`
 
-MCP:
+MCP：
 
 - `http://localhost:8000/api/mcp/`
 
-## Quick Start
+## 快速开始
 
-1. Bootstrap a local clone:
+1. 初始化本地环境：
    - `powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-local.ps1`
-2. Start the app:
+2. 启动服务：
    - `powershell -ExecutionPolicy Bypass -File .\scripts\run-local.ps1`
-3. Confirm health:
+3. 检查健康状态：
    - `http://localhost:8000/api/health`
-4. If you skipped automatic agent registration, register `config/host-agent-mcp-http.local.json` or `config/host-agent-mcp-stdio.local.json` and inject `prompts/finkernel_system_routing.md`.
-5. Start profile discovery or use the orchestration entrypoint:
+4. 如果跳过了自动 agent 注册，就手动注册 `config/host-agent-mcp-http.local.json` 或 `config/host-agent-mcp-stdio.local.json`，并注入 `prompts/finkernel_system_routing.md`
+5. 开始 persona discovery，或直接使用单入口编排：
    - `POST /api/profiles/assess-persona`
    - `POST /api/profiles/discovery/sessions`
 
-## Configuration
+## 配置
 
-- `config/persona-profiles.json` stores seed risk profiles.
-- `config/persona-profiles.example.json` is the template.
-- `config/host-agent-mcp-http.example.json` and `config/host-agent-mcp-stdio.example.json` show how to register FinKernel as an MCP server.
-- `scripts/bootstrap-local.ps1` creates `.venv`, installs dependencies, guides `.env` setup, initializes PostgreSQL + `vector`, writes local HTTP/stdio MCP configs, and prepares an agent bundle for Codex/OpenClaw/custom clients.
-- `scripts/run-local.ps1` starts the local FastAPI runtime on `http://localhost:8000`.
+- `config/persona-profiles.json` 用于存储 seed risk profiles
+- `config/persona-profiles.example.json` 是模板
+- `config/host-agent-mcp-http.example.json` 和 `config/host-agent-mcp-stdio.example.json` 展示了如何把 FinKernel 注册成 MCP server
+- `scripts/bootstrap-local.ps1` 会创建 `.venv`、安装依赖、逐步引导 `.env` 配置、初始化 PostgreSQL + `vector`、写入本地 HTTP/stdio MCP config，并为 Codex/OpenClaw/custom client 生成 agent bundle
+- `scripts/run-local.ps1` 会在 `http://localhost:8000` 启动本地 FastAPI 服务
 
-## Documentation Contract
+## 文档契约
 
-FinKernel is only considered complete when implementation, prompts, and documentation all describe the same product: a personal risk profile system.
+只有当实现、prompt 和文档都在描述同一个产品时，FinKernel 才算完成。
 
-At minimum, every change should keep these surfaces aligned:
+至少需要保证下面这些面始终一致：
 
 - API behavior
 - MCP tool behavior

@@ -1,9 +1,12 @@
 # Docs Index
 
+[![Docs: English](https://img.shields.io/badge/Docs-English-2563EB?style=flat-square)](README.en.md)
+[![Docs: Simplified Chinese](https://img.shields.io/badge/Docs-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-E67E22?style=flat-square)](README.zh-CN.md)
+
 Choose a language:
 
 - English: `docs/README.en.md`
-- 简体中文: `docs/README.zh-CN.md`
+- Simplified Chinese: `docs/README.zh-CN.md`
 
 FinKernel is intentionally focused on personal risk profile creation, review,
 and retrieval.

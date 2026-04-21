@@ -1,5 +1,8 @@
 # 文档索引
 
+[![Docs: English](https://img.shields.io/badge/Docs-English-2563EB?style=flat-square)](README.en.md)
+[![Docs: Simplified Chinese](https://img.shields.io/badge/Docs-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-E67E22?style=flat-square)](README.zh-CN.md)
+
 当前版本的 FinKernel 只聚焦于个人风险画像能力，核心文档如下：
 
 - `docs/setup-and-run.md`
