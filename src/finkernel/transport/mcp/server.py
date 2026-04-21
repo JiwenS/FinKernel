@@ -5,7 +5,7 @@ from datetime import datetime
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.server import TransportSecuritySettings
 
-from finkernel.schemas.discovery import ConfirmProfileDraftRequest, ReviewProfileRequest
+from finkernel.schemas.discovery import ConfirmProfileDraftRequest, PersonaUpdateChoice, ReviewProfileRequest
 from finkernel.schemas.profile import MemoryKind
 from finkernel.services.profile_discovery import ProfileDiscoveryService
 from finkernel.services.profiles import ProfileStore
@@ -23,13 +23,16 @@ def create_mcp_server(*, profile_discovery_service: ProfileDiscoveryService, pro
     mcp = FastMCP(
         name="FinKernel MCP",
         instructions=(
-            "Use these tools to build, review, and maintain a personal risk profile through FinKernel. "
+            "Use these tools to build, assess, and maintain a personal risk profile through FinKernel. "
+            "For dedicated persona-building flows, prefer assess_persona as the single orchestration entrypoint "
+            "so the agent can tell whether it should add a persona from scratch, continue an update in progress, "
+            "ask the user to choose an update section, or refresh persona markdown from a ready draft. "
             "When a user asks for portfolio guidance, risk review, or mandate clarification, first check profile "
             "onboarding status. If no active profile exists, start profile discovery before giving profile-scoped "
             "guidance. If a profile exists, read the active profile, persona markdown, persona sources, and risk "
-            "summary before answering. Preferred flow: onboarding status -> discovery if needed -> profile context "
-            "-> risk profile summary -> review or memory updates. Do not jump straight to generic investment advice "
-            "when FinKernel profile context is available."
+            "profile summary before answering. Preferred flow: onboarding status -> assess_persona when building "
+            "or updating the persona -> profile context -> risk profile summary -> review or memory updates. "
+            "Do not jump straight to generic investment advice when FinKernel profile context is available."
         ),
         json_response=True,
         stateless_http=True,
@@ -40,6 +43,22 @@ def create_mcp_server(*, profile_discovery_service: ProfileDiscoveryService, pro
     @mcp.tool(name="get_profile_onboarding_status")
     def get_profile_onboarding_status(owner_id: str | None = None) -> dict:
         return profile_store.get_onboarding_status(owner_id=owner_id).model_dump(mode="json")
+
+    @mcp.tool(name="assess_persona")
+    def assess_persona(
+        owner_id: str,
+        profile_id: str | None = None,
+        preferred_profile_name: str | None = None,
+        update_choice: str | None = None,
+        update_notes: str | None = None,
+    ) -> dict:
+        return profile_discovery_service.assess_persona(
+            owner_id=owner_id,
+            profile_id=profile_id,
+            preferred_profile_name=preferred_profile_name,
+            update_choice=PersonaUpdateChoice(update_choice) if update_choice else None,
+            update_notes=update_notes,
+        ).model_dump(mode="json")
 
     @mcp.tool(name="list_profiles")
     def list_profiles() -> dict:

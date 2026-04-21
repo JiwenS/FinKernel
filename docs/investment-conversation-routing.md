@@ -3,6 +3,10 @@
 This document defines how an upper-layer agent should route natural-language
 investment conversations into FinKernel.
 
+It reflects Phase 1 scope: FinKernel's job right now is to establish, read, and
+maintain the user's personal risk profile before any profile-aware advice is
+given.
+
 ## Core rule
 
 When the user asks for profile-aware investment guidance:
@@ -16,6 +20,10 @@ When the user asks for profile-aware investment guidance:
 The first MCP read should be:
 
 - `get_profile_onboarding_status`
+
+For explicit persona-building or persona-maintenance requests, start with:
+
+- `assess_persona`
 
 ## If no active profile exists
 

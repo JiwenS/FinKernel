@@ -5,6 +5,13 @@
 FinKernel now exists to produce a durable, reviewable, machine-readable and
 human-readable **personal risk profile**.
 
+## Current phase
+
+Phase 1 is dedicated to the risk-profile system itself: onboarding, discovery,
+confirmation, retrieval, review/versioning, persona artifacts, and profile
+memory. Portfolio construction, recommendation pipelines, and execution
+workflows remain outside this phase.
+
 This profile should answer:
 
 - what the money is for
@@ -16,6 +23,7 @@ This profile should answer:
 ## In scope
 
 - guided onboarding across core risk dimensions
+- single-entry `assess_persona` orchestration for add/update flows
 - profile draft generation
 - explicit user confirmation into an active version
 - versioned profile review

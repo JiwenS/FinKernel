@@ -3,9 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Response
 
 from finkernel.schemas.discovery import (
+    AssessPersonaRequest,
     ConfirmProfileDraftRequest,
     DiscoveryQuestion,
     DiscoverySession,
+    PersonaAssessmentState,
     ProfileDraft,
     ReviewProfileRequest,
     StartDiscoveryRequest,
@@ -32,6 +34,21 @@ router = APIRouter(tags=["profiles"])
 @router.get("/profiles/onboarding-status", response_model=ProfileOnboardingStatus)
 def get_profile_onboarding_status(owner_id: str | None = None, profile_store: ProfileStore = Depends(get_profile_store)) -> ProfileOnboardingStatus:
     return profile_store.get_onboarding_status(owner_id=owner_id)
+
+
+@router.post("/profiles/assess-persona", response_model=PersonaAssessmentState)
+def assess_persona(payload: AssessPersonaRequest, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> PersonaAssessmentState:
+    try:
+        return discovery_service.assess_persona(
+            owner_id=payload.owner_id,
+            profile_id=payload.profile_id,
+            preferred_profile_name=payload.preferred_profile_name,
+            update_choice=payload.update_choice,
+            update_notes=payload.update_notes,
+        )
+    except Exception as exc:
+        raise_for_profile_error(exc)
+        raise
 
 
 @router.get("/profiles/{profile_id}", response_model=PersonaProfile)

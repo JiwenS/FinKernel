@@ -20,6 +20,7 @@ def main() -> None:
     integration_body = read("docs/upper-layer-agent-integration.md")
 
     assert "get_profile_onboarding_status" in skill_body
+    assert "assess_persona" in skill_body
     assert "get_risk_profile_summary" in skill_body
     assert "save_profile_persona_markdown" in skill_body
     assert "Do not give generic ETF / T-bill / market advice first" in skill_body
@@ -40,8 +41,8 @@ def main() -> None:
 
     settings = Settings(
         environment="test",
-        database_url=f"sqlite+pysqlite:///{tmp_dir / 'routing-contract.db'}",
-        enable_pgvector=False,
+        database_url="postgresql+psycopg://finkernel:change-me@localhost:5432/finkernel",
+        enable_pgvector=True,
         profile_store_path=str(profiles_path),
     )
     instructions = build_runtime(settings)["mcp_server"].instructions.lower()

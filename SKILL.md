@@ -14,6 +14,10 @@ This skill is the top-level execution surface for host agents integrating FinKer
 FinKernel stores onboarding state, profile evidence, persona markdown, version history,
 and long-term / short-term memory for a user's personal risk profile.
 
+Current delivery scope: Phase 1 is risk-profile work only. Use this skill to
+complete onboarding, retrieve or revise the active profile, maintain persona
+artifacts, and capture profile memory before any broader investment workflow.
+
 The agent using this skill is responsible for:
 
 1. routing profile-aware investment conversations into FinKernel first
@@ -38,6 +42,19 @@ Use general market research only **after** FinKernel context is loaded and only 
 fresh external facts materially affect the answer.
 
 ## Tool routing
+
+### Primary orchestration
+
+- MCP `assess_persona`
+
+Use `assess_persona` as the default single entrypoint for
+profile-building conversations. It should tell the host whether:
+
+1. there is no active persona yet and FinKernel should add one from scratch
+2. an active persona exists but still needs an update pass to become complete
+3. the active persona is complete and the user should choose whether to reassess or update a section
+4. a draft is ready for persona writing + confirmation
+5. no changes were requested and the current active persona remains in force
 
 ### Onboarding / profile selection
 
@@ -67,6 +84,7 @@ fresh external facts materially affect the answer.
 
 ### Prompt assets
 
+- `prompts/persona_assessment.md`
 - `prompts/persona_analyzer.md`
 - `prompts/persona_builder.md`
 - `prompts/persona_merger.md`
@@ -74,24 +92,26 @@ fresh external facts materially affect the answer.
 
 ## Main routing flow
 
-1. Call `get_profile_onboarding_status`.
-2. If onboarding is required:
-   - explain that FinKernel needs profile context first
-   - start discovery
-   - continue question / answer flow until draft is ready
-   - generate the draft
-   - write `persona_markdown` when needed
-   - confirm the draft
-3. If an active profile exists:
-   - resolve the governing profile
-   - read `get_profile`
-   - read `get_profile_persona_markdown`
-   - read `get_risk_profile_summary`
-   - read memory when relevant
-4. If the user corrects or updates the profile:
-   - start `review_profile` or append memory
-   - rebuild markdown if necessary
-   - save the updated artifact
+1. For profile-building or profile-maintenance requests, call `assess_persona`.
+2. If it returns `question_pending`:
+   - ask the returned question
+   - submit the answer with `submit_profile_discovery_answer`
+   - call `assess_persona` again
+   - keep going until every required section is covered
+3. If it returns `awaiting_update_selection`:
+   - present the returned `update_options`
+   - send the selected `update_choice` back through `assess_persona`
+4. If it returns `draft_ready`:
+   - read the draft and evidence
+   - write or refresh `persona_markdown`
+   - call `confirm_profile_draft`
+5. If it returns `persona_complete`:
+   - continue using the current active persona
+6. For profile-aware investment guidance, still preserve the strict read-first flow:
+   - `get_profile_onboarding_status`
+   - `get_profile`
+   - `get_profile_persona_markdown`
+   - `get_risk_profile_summary`
 
 ## Execution rules
 

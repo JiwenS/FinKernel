@@ -19,18 +19,106 @@ from finkernel.schemas.discovery import (
     DiscoveryQuestionType,
     DiscoverySession,
     DiscoverySessionStatus,
+    DiscoveryWorkflowKind,
     DimensionState,
     DraftReadinessAssessment,
     NarrativeMemoryCandidate,
+    PersonaAssessmentReason,
+    PersonaAssessmentState,
+    PersonaAssessmentStatus,
+    PersonaUpdateChoice,
+    PersonaUpdateOption,
     ProfileDraft,
     ReviewProfileRequest,
 )
-from finkernel.schemas.profile import DistilledProfileMemoryResponse, MemoryKind, PersonaProfile, PersonaSourcePacket, ProfileLifecycleStatus, RiskBudget, RiskProfileSummary
+from finkernel.schemas.profile import (
+    DistilledProfileMemoryResponse,
+    MemoryKind,
+    PersonaProfile,
+    PersonaSourcePacket,
+    ProfileLifecycleStatus,
+    RiskBudget,
+    RiskProfileSummary,
+)
 from finkernel.services.persona_markdown import build_persona_evidence_from_answers
 from finkernel.services.profiles import ProfileStore
-from finkernel.services.question_planner import QuestionPlanner, build_empty_dimension_states
+from finkernel.services.question_planner import MANDATORY_DIMENSIONS, QuestionPlanner, build_empty_dimension_states
 from finkernel.storage.models import DiscoverySessionModel, ProfileDraftModel
 from finkernel.storage.repositories import DiscoverySessionRepository, ProfileDraftRepository
+
+PROMPT_TEMPLATE_ADD_QUESTION = "persona_assessment.add_question"
+PROMPT_TEMPLATE_UPDATE_QUESTION = "persona_assessment.update_question"
+PROMPT_TEMPLATE_DRAFT_READY = "persona_assessment.draft_ready"
+PROMPT_TEMPLATE_UPDATE_SELECTION = "persona_assessment.update_selection"
+PROMPT_TEMPLATE_COMPLETE = "persona_assessment.complete"
+
+UPDATE_OPTION_DEFINITIONS: tuple[PersonaUpdateOption, ...] = (
+    PersonaUpdateOption(
+        choice=PersonaUpdateChoice.FULL_REASSESSMENT,
+        label="Reassess everything",
+        description="Run the full persona assessment again before creating a refreshed profile version.",
+    ),
+    PersonaUpdateOption(
+        choice=PersonaUpdateChoice.OBJECTIVES_AND_HORIZON,
+        label="Goals and horizon",
+        description="Update what the portfolio is for and how long this mandate should govern the capital.",
+    ),
+    PersonaUpdateOption(
+        choice=PersonaUpdateChoice.LIQUIDITY_NEEDS,
+        label="Liquidity needs",
+        description="Refresh near-term cash needs, timing, and how sensitive those needs are to market drawdowns.",
+    ),
+    PersonaUpdateOption(
+        choice=PersonaUpdateChoice.RISK_TOLERANCE,
+        label="Risk tolerance",
+        description="Revisit drawdown response, loss threshold, and the user's comfort with volatility.",
+    ),
+    PersonaUpdateOption(
+        choice=PersonaUpdateChoice.CONSTRAINTS_AND_EXCLUSIONS,
+        label="Constraints",
+        description="Refresh hard restrictions, exclusions, and values-driven guardrails.",
+    ),
+    PersonaUpdateOption(
+        choice=PersonaUpdateChoice.CONCENTRATION_LIMITS,
+        label="Concentration limits",
+        description="Update single-name, theme, or position-size concentration guidance.",
+    ),
+    PersonaUpdateOption(
+        choice=PersonaUpdateChoice.COMMUNICATION_PREFERENCES,
+        label="Communication style",
+        description="Adjust how proactive FinKernel should be and how often the persona should be reviewed.",
+    ),
+    PersonaUpdateOption(
+        choice=PersonaUpdateChoice.BACKGROUND_CONTEXT,
+        label="Background context",
+        description="Capture new life context, responsibilities, or prior experiences that should shape the persona.",
+    ),
+    PersonaUpdateOption(
+        choice=PersonaUpdateChoice.NO_CHANGES,
+        label="No changes",
+        description="Keep the current active persona as-is and continue using it without a new assessment pass.",
+    ),
+)
+
+UPDATE_CHOICE_DIMENSIONS: dict[PersonaUpdateChoice, list[DiscoveryDimension]] = {
+    PersonaUpdateChoice.FULL_REASSESSMENT: list(MANDATORY_DIMENSIONS) + [DiscoveryDimension.BACKGROUND],
+    PersonaUpdateChoice.OBJECTIVES_AND_HORIZON: [
+        DiscoveryDimension.OBJECTIVE,
+        DiscoveryDimension.HORIZON,
+    ],
+    PersonaUpdateChoice.LIQUIDITY_NEEDS: [DiscoveryDimension.LIQUIDITY],
+    PersonaUpdateChoice.RISK_TOLERANCE: [
+        DiscoveryDimension.RISK_RESPONSE,
+        DiscoveryDimension.LOSS_THRESHOLD,
+    ],
+    PersonaUpdateChoice.CONSTRAINTS_AND_EXCLUSIONS: [DiscoveryDimension.CONSTRAINTS],
+    PersonaUpdateChoice.CONCENTRATION_LIMITS: [DiscoveryDimension.CONCENTRATION],
+    PersonaUpdateChoice.COMMUNICATION_PREFERENCES: [
+        DiscoveryDimension.INTERACTION_STYLE,
+        DiscoveryDimension.REVIEW_CADENCE,
+    ],
+    PersonaUpdateChoice.BACKGROUND_CONTEXT: [DiscoveryDimension.BACKGROUND],
+}
 
 
 class DiscoveryNotReadyError(ValueError):
@@ -60,8 +148,58 @@ class ProfileDiscoveryService:
             session_id=str(uuid4()),
             owner_id=owner_id,
             preferred_profile_name=preferred_profile_name,
+            workflow_kind=DiscoveryWorkflowKind.ADD,
             dimension_states=build_empty_dimension_states(),
         )
+        next_question = self.planner.choose_next_question(session)
+        if next_question is not None:
+            session.current_question_id = next_question.question_id
+            session.current_question = next_question
+            session.asked_question_ids.append(next_question.question_id)
+        self._save_session(session, next_question=next_question)
+        return session
+
+    def start_update(
+        self,
+        *,
+        profile_id: str,
+        update_choice: PersonaUpdateChoice | None = None,
+        update_notes: str | None = None,
+        target_dimensions: list[DiscoveryDimension] | None = None,
+    ) -> DiscoverySession:
+        profile = self.profile_store.get(profile_id, require_active=False)
+        session_id = str(uuid4())
+        selected_dimensions = self._normalize_dimensions(target_dimensions or self._dimensions_for_update_choice(update_choice))
+        session = DiscoverySession(
+            session_id=session_id,
+            owner_id=profile.owner_id,
+            preferred_profile_name=profile.display_name,
+            workflow_kind=DiscoveryWorkflowKind.UPDATE,
+            source_profile_id=profile.profile_id,
+            update_choice=update_choice,
+            update_notes=update_notes,
+            target_dimensions=selected_dimensions,
+            dimension_states=build_empty_dimension_states(),
+        )
+        seeded_answers = self._seed_answers_from_profile(
+            profile,
+            session_id=session_id,
+            payload=ReviewProfileRequest(
+                trigger=self._build_update_trigger(update_choice, selected_dimensions),
+                notes=update_notes,
+            ),
+        )
+        for answer in seeded_answers:
+            session.answers.append(answer)
+            self.planner.update_dimension_state(session, answer)
+        self._reset_target_dimensions(session, selected_dimensions)
+        session.updated_at = datetime.now(UTC)
+        readiness = self.planner.build_readiness(session)
+        if readiness.ready:
+            session.status = DiscoverySessionStatus.DRAFT_READY
+            self._save_session(session, next_question=None)
+            return session
+
         next_question = self.planner.choose_next_question(session)
         if next_question is not None:
             session.current_question_id = next_question.question_id
@@ -131,7 +269,8 @@ class ProfileDiscoveryService:
         draft = self._build_draft(session, readiness)
         self._save_draft(draft)
         session.status = DiscoverySessionStatus.DRAFT_READY
-        self._save_session(session, next_question=self._find_question(session_id=session_id, question_id=session.current_question_id) if session.current_question_id else None)
+        current_question = self._find_question(session_id=session_id, question_id=session.current_question_id) if session.current_question_id else None
+        self._save_session(session, next_question=current_question)
         return draft
 
     def get_draft(self, draft_id: str) -> ProfileDraft:
@@ -244,6 +383,11 @@ class ProfileDiscoveryService:
             session_id=session_id,
             owner_id=profile.owner_id,
             preferred_profile_name=profile.display_name,
+            workflow_kind=DiscoveryWorkflowKind.UPDATE,
+            source_profile_id=profile.profile_id,
+            update_choice=PersonaUpdateChoice.FULL_REASSESSMENT,
+            update_notes=payload.notes,
+            target_dimensions=list(MANDATORY_DIMENSIONS) + [DiscoveryDimension.BACKGROUND],
             status=DiscoverySessionStatus.DRAFT_READY,
             dimension_states=self._seed_dimension_states(),
             answers=self._seed_answers_from_profile(profile, session_id=session_id, payload=payload),
@@ -251,6 +395,142 @@ class ProfileDiscoveryService:
         session.updated_at = datetime.now(UTC)
         self._save_session(session, next_question=None)
         return session
+
+    def assess_profile_completeness(self, profile_id: str, *, version: int | None = None) -> DraftReadinessAssessment:
+        profile = self.get_profile(profile_id, version=version)
+        session = DiscoverySession(
+            session_id=f"assessment-{profile.profile_id}-{profile.version}",
+            owner_id=profile.owner_id,
+            preferred_profile_name=profile.display_name,
+            workflow_kind=DiscoveryWorkflowKind.UPDATE,
+            source_profile_id=profile.profile_id,
+            dimension_states=build_empty_dimension_states(),
+        )
+        seeded_answers = self._seed_answers_from_profile(
+            profile,
+            session_id=session.session_id,
+            payload=ReviewProfileRequest(trigger="persona_completeness_check"),
+        )
+        for answer in seeded_answers:
+            session.answers.append(answer)
+            self.planner.update_dimension_state(session, answer)
+        readiness = self.planner.build_readiness(session)
+        if not profile.persona_markdown:
+            readiness.notes.append("Persona markdown is still missing.")
+        return readiness
+
+    def assess_persona(
+        self,
+        *,
+        owner_id: str,
+        profile_id: str | None = None,
+        preferred_profile_name: str | None = None,
+        update_choice: PersonaUpdateChoice | None = None,
+        update_notes: str | None = None,
+    ) -> PersonaAssessmentState:
+        active_profile = self._select_active_profile(owner_id=owner_id, profile_id=profile_id)
+        if active_profile is None:
+            session = self._find_open_session(
+                owner_id=owner_id,
+                workflow_kind=DiscoveryWorkflowKind.ADD,
+                source_profile_id=None,
+            )
+            if session is None:
+                session = self.start_discovery(owner_id=owner_id, preferred_profile_name=preferred_profile_name)
+                reason = PersonaAssessmentReason.NO_ACTIVE_PERSONA
+            else:
+                reason = PersonaAssessmentReason.ADD_IN_PROGRESS
+            return self._build_assessment_state_from_session(
+                session,
+                action=DiscoveryWorkflowKind.ADD,
+                reason=reason,
+                active_profile=None,
+            )
+
+        readiness = self.assess_profile_completeness(active_profile.profile_id, version=active_profile.version)
+        profile_is_complete = readiness.ready and bool(active_profile.persona_markdown)
+        open_update_session = self._find_open_session(
+            owner_id=owner_id,
+            workflow_kind=DiscoveryWorkflowKind.UPDATE,
+            source_profile_id=active_profile.profile_id,
+        )
+
+        if not profile_is_complete:
+            if open_update_session is None:
+                open_update_session = self.start_update(
+                    profile_id=active_profile.profile_id,
+                    update_notes=update_notes,
+                    target_dimensions=list(readiness.unmet_dimensions),
+                )
+            return self._build_assessment_state_from_session(
+                open_update_session,
+                action=DiscoveryWorkflowKind.UPDATE,
+                reason=PersonaAssessmentReason.INCOMPLETE_ACTIVE_PERSONA,
+                active_profile=active_profile,
+            )
+
+        if update_choice is PersonaUpdateChoice.NO_CHANGES:
+            self._close_open_sessions(
+                owner_id=owner_id,
+                workflow_kind=DiscoveryWorkflowKind.UPDATE,
+                source_profile_id=active_profile.profile_id,
+            )
+            return PersonaAssessmentState(
+                owner_id=owner_id,
+                action=DiscoveryWorkflowKind.UPDATE,
+                status=PersonaAssessmentStatus.PERSONA_COMPLETE,
+                reason=PersonaAssessmentReason.NO_CHANGES_CONFIRMED,
+                recommended_next_action="continue_using_the_current_active_persona",
+                prompt_template_id=PROMPT_TEMPLATE_COMPLETE,
+                active_profile_id=active_profile.profile_id,
+                active_profile_version=active_profile.version,
+                persona_markdown_missing=False,
+                notes=["The current active persona remains in force with no requested changes."],
+            )
+
+        if open_update_session is not None:
+            if update_choice is None or open_update_session.update_choice == update_choice:
+                return self._build_assessment_state_from_session(
+                    open_update_session,
+                    action=DiscoveryWorkflowKind.UPDATE,
+                    reason=PersonaAssessmentReason.UPDATE_IN_PROGRESS,
+                    active_profile=active_profile,
+                )
+            self._close_open_sessions(
+                owner_id=owner_id,
+                workflow_kind=DiscoveryWorkflowKind.UPDATE,
+                source_profile_id=active_profile.profile_id,
+            )
+
+        if update_choice is None:
+            return PersonaAssessmentState(
+                owner_id=owner_id,
+                action=DiscoveryWorkflowKind.UPDATE,
+                status=PersonaAssessmentStatus.AWAITING_UPDATE_SELECTION,
+                reason=PersonaAssessmentReason.COMPLETE_ACTIVE_PERSONA,
+                recommended_next_action="ask_whether_to_keep_reassess_or_update_the_persona",
+                prompt_template_id=PROMPT_TEMPLATE_UPDATE_SELECTION,
+                active_profile_id=active_profile.profile_id,
+                active_profile_version=active_profile.version,
+                persona_markdown_missing=False,
+                update_options=list(UPDATE_OPTION_DEFINITIONS),
+                notes=[
+                    "The active persona is complete.",
+                    "Ask whether the user wants a full reassessment, a targeted update, or no changes.",
+                ],
+            )
+
+        session = self.start_update(
+            profile_id=active_profile.profile_id,
+            update_choice=update_choice,
+            update_notes=update_notes,
+        )
+        return self._build_assessment_state_from_session(
+            session,
+            action=DiscoveryWorkflowKind.UPDATE,
+            reason=PersonaAssessmentReason.UPDATE_IN_PROGRESS,
+            active_profile=active_profile,
+        )
 
     def confirm_draft(self, *, draft_id: str, payload: ConfirmProfileDraftRequest) -> PersonaProfile:
         draft = self.get_draft(draft_id)
@@ -343,7 +623,10 @@ class ProfileDiscoveryService:
             (DiscoveryDimension.HORIZON, financial.get("time_horizon") or "Existing horizon unchanged."),
             (DiscoveryDimension.RISK_RESPONSE, risk.get("stress_response") or f"Current risk budget is {profile.risk_budget.value}."),
             (DiscoveryDimension.LOSS_THRESHOLD, risk.get("max_drawdown_signal") or "Existing loss threshold unchanged."),
-            (DiscoveryDimension.CONSTRAINTS, constraints.get("constraints") or self._serialize_list(profile.forbidden_symbols) or "Existing constraints unchanged."),
+            (
+                DiscoveryDimension.CONSTRAINTS,
+                constraints.get("constraints") or self._serialize_list(profile.forbidden_symbols) or "Existing constraints unchanged.",
+            ),
             (DiscoveryDimension.CONCENTRATION, constraints.get("concentration") or "Existing concentration guidance unchanged."),
             (DiscoveryDimension.INTERACTION_STYLE, interaction.get("interaction_style") or "Keep existing interaction style."),
             (DiscoveryDimension.REVIEW_CADENCE, interaction.get("review_cadence") or "Keep existing review cadence."),
@@ -361,10 +644,152 @@ class ProfileDiscoveryService:
     def _serialize_list(self, items: list[str]) -> str:
         return ", ".join(items)
 
+    def _select_active_profile(self, *, owner_id: str, profile_id: str | None) -> PersonaProfile | None:
+        if profile_id is not None:
+            profile = self.profile_store.get(profile_id, require_active=False)
+            if profile.owner_id != owner_id or not profile.is_active:
+                return None
+            return profile
+        active_profiles = self.profile_store.list_active(owner_id=owner_id)
+        return active_profiles[0] if active_profiles else None
+
+    def _list_open_sessions(
+        self,
+        *,
+        owner_id: str,
+        workflow_kind: DiscoveryWorkflowKind,
+        source_profile_id: str | None,
+    ) -> list[DiscoverySession]:
+        with self._session_scope() as session:
+            models = self.session_repository.list_for_owner(
+                session,
+                owner_id,
+                statuses=[
+                    DiscoverySessionStatus.DISCOVERY_IN_PROGRESS.value,
+                    DiscoverySessionStatus.DRAFT_READY.value,
+                ],
+            )
+        candidates: list[DiscoverySession] = []
+        for model in models:
+            candidate = DiscoverySession.model_validate(model.payload)
+            if candidate.workflow_kind != workflow_kind:
+                continue
+            if candidate.source_profile_id != source_profile_id:
+                continue
+            candidates.append(candidate)
+        return candidates
+
+    def _find_open_session(
+        self,
+        *,
+        owner_id: str,
+        workflow_kind: DiscoveryWorkflowKind,
+        source_profile_id: str | None,
+    ) -> DiscoverySession | None:
+        sessions = self._list_open_sessions(
+            owner_id=owner_id,
+            workflow_kind=workflow_kind,
+            source_profile_id=source_profile_id,
+        )
+        return sessions[0] if sessions else None
+
+    def _close_open_sessions(
+        self,
+        *,
+        owner_id: str,
+        workflow_kind: DiscoveryWorkflowKind,
+        source_profile_id: str | None,
+    ) -> None:
+        for session in self._list_open_sessions(
+            owner_id=owner_id,
+            workflow_kind=workflow_kind,
+            source_profile_id=source_profile_id,
+        ):
+            self._mark_session_completed(session.session_id)
+
+    def _get_or_create_draft_for_session(self, session_id: str) -> ProfileDraft:
+        with self._session_scope() as session:
+            models = self.draft_repository.list_for_session(session, session_id)
+        if models:
+            return ProfileDraft.model_validate(models[0].payload)
+        return self.generate_draft(session_id)
+
+    def _build_assessment_state_from_session(
+        self,
+        session: DiscoverySession,
+        *,
+        action: DiscoveryWorkflowKind,
+        reason: PersonaAssessmentReason,
+        active_profile: PersonaProfile | None,
+    ) -> PersonaAssessmentState:
+        session = self.get_session(session.session_id)
+        if session.status is DiscoverySessionStatus.DRAFT_READY:
+            draft = self._get_or_create_draft_for_session(session.session_id)
+            notes = list(draft.readiness.notes)
+            if action is DiscoveryWorkflowKind.ADD:
+                notes.insert(0, "All required persona sections are covered. Write persona markdown and confirm the draft.")
+            else:
+                notes.insert(0, "This update pass has enough evidence to write refreshed persona markdown and confirm a new version.")
+            return PersonaAssessmentState(
+                owner_id=session.owner_id,
+                action=action,
+                status=PersonaAssessmentStatus.DRAFT_READY,
+                reason=PersonaAssessmentReason.PERSONA_READY_FOR_CONFIRMATION,
+                recommended_next_action="write_or_refresh_persona_markdown_then_confirm_profile_draft",
+                prompt_template_id=PROMPT_TEMPLATE_DRAFT_READY,
+                active_profile_id=active_profile.profile_id if active_profile else draft.suggested_profile.profile_id,
+                active_profile_version=active_profile.version if active_profile else None,
+                persona_markdown_missing=not bool(active_profile.persona_markdown) if active_profile else True,
+                discovery_session_id=session.session_id,
+                profile_draft_id=draft.draft_id,
+                selected_update_choice=session.update_choice,
+                missing_dimensions=draft.readiness.unmet_dimensions,
+                notes=notes,
+            )
+
+        question = session.current_question if session.current_question_id else None
+        if question is None:
+            question = self.get_next_question(session.session_id)
+            session = self.get_session(session.session_id)
+            if session.status is DiscoverySessionStatus.DRAFT_READY:
+                return self._build_assessment_state_from_session(
+                    session,
+                    action=action,
+                    reason=reason,
+                    active_profile=active_profile,
+                )
+
+        readiness = self.planner.build_readiness(session)
+        notes = list(readiness.notes)
+        if active_profile is not None and not active_profile.persona_markdown:
+            notes.append("Persona markdown is still missing.")
+        if action is DiscoveryWorkflowKind.UPDATE and session.target_dimensions:
+            notes.append(
+                "Focused update sections: "
+                + ", ".join(dimension.value for dimension in session.target_dimensions)
+                + "."
+            )
+        return PersonaAssessmentState(
+            owner_id=session.owner_id,
+            action=action,
+            status=PersonaAssessmentStatus.QUESTION_PENDING,
+            reason=reason,
+            recommended_next_action="ask_the_returned_question_then_submit_the_answer",
+            prompt_template_id=PROMPT_TEMPLATE_ADD_QUESTION if action is DiscoveryWorkflowKind.ADD else PROMPT_TEMPLATE_UPDATE_QUESTION,
+            active_profile_id=active_profile.profile_id if active_profile else None,
+            active_profile_version=active_profile.version if active_profile else None,
+            persona_markdown_missing=not bool(active_profile.persona_markdown) if active_profile else False,
+            discovery_session_id=session.session_id,
+            selected_update_choice=session.update_choice,
+            missing_dimensions=readiness.unmet_dimensions,
+            notes=notes,
+            next_question=question,
+        )
+
     def _build_draft(self, session: DiscoverySession, readiness: DraftReadinessAssessment) -> ProfileDraft:
         answer_map = {answer.dimension: answer.answer_text for answer in session.answers}
         preferred_name = session.preferred_profile_name or "Primary Risk Profile"
-        profile_id = self._slugify_profile_id(preferred_name, session.owner_id)
+        profile_id = session.source_profile_id or self._slugify_profile_id(preferred_name, session.owner_id)
         risk_budget = self._derive_risk_budget(answer_map)
         mandate_summary = self._build_mandate_summary(answer_map, risk_budget)
         forbidden_symbols = self._extract_forbidden_symbols(answer_map)
@@ -381,7 +806,7 @@ class ProfileDiscoveryService:
             display_name=preferred_name,
             mandate_summary=mandate_summary,
             persona_style=self._derive_persona_style(risk_budget, answer_map),
-            created_from="guided_discovery",
+            created_from="guided_discovery" if session.workflow_kind is DiscoveryWorkflowKind.ADD else "persona_update",
             risk_budget=risk_budget,
             forbidden_symbols=forbidden_symbols,
             hard_rules=hard_rules,
@@ -510,6 +935,40 @@ class ProfileDiscoveryService:
         base = re.sub(r"[^a-z0-9]+", "-", preferred_name.lower()).strip("-") or "profile"
         owner = re.sub(r"[^a-z0-9]+", "-", owner_id.lower()).strip("-") or "owner"
         return f"{owner}-{base}"
+
+    def _dimensions_for_update_choice(self, update_choice: PersonaUpdateChoice | None) -> list[DiscoveryDimension]:
+        if update_choice is None:
+            return []
+        return list(UPDATE_CHOICE_DIMENSIONS.get(update_choice, []))
+
+    def _normalize_dimensions(self, dimensions: list[DiscoveryDimension]) -> list[DiscoveryDimension]:
+        return list(dict.fromkeys(dimensions))
+
+    def _reset_target_dimensions(self, session: DiscoverySession, dimensions: list[DiscoveryDimension]) -> None:
+        for dimension in self._normalize_dimensions(dimensions):
+            state = self._get_dimension_state(session, dimension)
+            state.coverage_score = 0
+            state.confidence_score = 0
+            state.depth_score = 0
+            state.conflict_flag = False
+            state.last_question_id = None
+            state.last_updated_at = None
+            state.extracted_facts = []
+            state.pending_gaps = []
+
+    def _build_update_trigger(self, update_choice: PersonaUpdateChoice | None, target_dimensions: list[DiscoveryDimension]) -> str:
+        if update_choice is not None:
+            return f"assess_persona:{update_choice.value}"
+        if target_dimensions:
+            joined = ",".join(dimension.value for dimension in target_dimensions)
+            return f"assess_persona:resume_missing_sections:{joined}"
+        return "assess_persona:update"
+
+    def _get_dimension_state(self, session: DiscoverySession, dimension: DiscoveryDimension) -> DimensionState:
+        for state in session.dimension_states:
+            if state.dimension is dimension:
+                return state
+        raise KeyError(f"Missing dimension state for {dimension.value}")
 
     def _load_session_with_question(self, session_id: str) -> tuple[DiscoverySession, DiscoveryQuestion | None]:
         session = self.get_session(session_id)

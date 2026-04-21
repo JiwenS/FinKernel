@@ -3,12 +3,17 @@
 FinKernel is responsible for profile onboarding, risk-profile retrieval,
 persona evidence storage, and persona markdown maintenance.
 
+That is the full Phase 1 boundary: upper-layer agents should treat FinKernel as
+the dedicated risk-profile layer first, and only add broader investment logic
+after profile context is resolved.
+
 An upper-layer agent should use FinKernel before presenting profile-aware
 investment guidance.
 
 ## HTTP contract
 
 - `GET /api/profiles/onboarding-status`
+- `POST /api/profiles/assess-persona`
 - `GET /api/profiles/{profile_id}`
 - `GET /api/profiles/{profile_id}/risk-summary`
 - `GET /api/profiles/{profile_id}/persona.md`
@@ -26,6 +31,7 @@ investment guidance.
 
 ## MCP equivalents
 
+- `assess_persona`
 - `get_profile_onboarding_status`
 - `get_profile`
 - `get_profile_persona_markdown`
@@ -46,3 +52,7 @@ Do not give final profile-aware guidance until one of these is true:
 3. `GET /api/profiles/{profile_id}/persona.md`
 4. `GET /api/profiles/{profile_id}/risk-summary`
 5. optional memory reads when the answer depends on current context
+
+For dedicated profile-building flows, the host may instead use
+`POST /api/profiles/assess-persona` as the single orchestration checkpoint
+before each next question, draft, or update prompt.

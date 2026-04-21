@@ -1,15 +1,11 @@
 # Docs Index
 
-Core product docs for the narrowed FinKernel scope:
+Choose a language:
 
-- `docs/setup-and-run.md`
-- `docs/persona-profiles.md`
-- `docs/persona-agent-workflow.md`
-- `docs/investment-conversation-routing.md`
-- `docs/upper-layer-agent-integration.md`
-- `docs/host-agent-runtime-integration.md`
-- `docs/troubleshooting.md`
-- `docs/PRD.md`
+- English: `docs/README.en.md`
+- 简体中文: `docs/README.zh-CN.md`
 
-FinKernel is now intentionally focused on personal risk profile creation,
-review, and retrieval.
+FinKernel is intentionally focused on personal risk profile creation, review,
+and retrieval.
+
+FinKernel 当前聚焦于个人风险画像的创建、审阅和检索。

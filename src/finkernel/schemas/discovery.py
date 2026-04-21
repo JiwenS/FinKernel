@@ -14,6 +14,11 @@ class DiscoverySessionStatus(str, Enum):
     COMPLETED = "completed"
 
 
+class DiscoveryWorkflowKind(str, Enum):
+    ADD = "add"
+    UPDATE = "update"
+
+
 class DiscoveryPillar(str, Enum):
     FINANCIAL_OBJECTIVES = "financial_objectives"
     RISK = "risk"
@@ -104,10 +109,27 @@ class DraftReadinessAssessment(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class PersonaUpdateChoice(str, Enum):
+    FULL_REASSESSMENT = "full_reassessment"
+    OBJECTIVES_AND_HORIZON = "objectives_and_horizon"
+    LIQUIDITY_NEEDS = "liquidity_needs"
+    RISK_TOLERANCE = "risk_tolerance"
+    CONSTRAINTS_AND_EXCLUSIONS = "constraints_and_exclusions"
+    CONCENTRATION_LIMITS = "concentration_limits"
+    COMMUNICATION_PREFERENCES = "communication_preferences"
+    BACKGROUND_CONTEXT = "background_context"
+    NO_CHANGES = "no_changes"
+
+
 class DiscoverySession(BaseModel):
     session_id: str
     owner_id: str
     preferred_profile_name: str | None = None
+    workflow_kind: DiscoveryWorkflowKind = DiscoveryWorkflowKind.ADD
+    source_profile_id: str | None = None
+    update_choice: PersonaUpdateChoice | None = None
+    update_notes: str | None = None
+    target_dimensions: list[DiscoveryDimension] = Field(default_factory=list)
     status: DiscoverySessionStatus = DiscoverySessionStatus.DISCOVERY_IN_PROGRESS
     current_question_id: str | None = None
     current_question: DiscoveryQuestion | None = None
@@ -161,3 +183,53 @@ class ConfirmProfileDraftRequest(BaseModel):
 class ReviewProfileRequest(BaseModel):
     trigger: str = Field(min_length=1)
     notes: str | None = None
+
+
+class PersonaAssessmentStatus(str, Enum):
+    QUESTION_PENDING = "question_pending"
+    DRAFT_READY = "draft_ready"
+    AWAITING_UPDATE_SELECTION = "awaiting_update_selection"
+    PERSONA_COMPLETE = "persona_complete"
+
+
+class PersonaAssessmentReason(str, Enum):
+    NO_ACTIVE_PERSONA = "no_active_persona"
+    ADD_IN_PROGRESS = "add_in_progress"
+    INCOMPLETE_ACTIVE_PERSONA = "incomplete_active_persona"
+    UPDATE_IN_PROGRESS = "update_in_progress"
+    COMPLETE_ACTIVE_PERSONA = "complete_active_persona"
+    NO_CHANGES_CONFIRMED = "no_changes_confirmed"
+    PERSONA_READY_FOR_CONFIRMATION = "persona_ready_for_confirmation"
+
+
+class PersonaUpdateOption(BaseModel):
+    choice: PersonaUpdateChoice
+    label: str
+    description: str
+
+
+class AssessPersonaRequest(BaseModel):
+    owner_id: str = Field(min_length=1)
+    profile_id: str | None = None
+    preferred_profile_name: str | None = None
+    update_choice: PersonaUpdateChoice | None = None
+    update_notes: str | None = None
+
+
+class PersonaAssessmentState(BaseModel):
+    owner_id: str
+    action: DiscoveryWorkflowKind
+    status: PersonaAssessmentStatus
+    reason: PersonaAssessmentReason
+    recommended_next_action: str
+    prompt_template_id: str
+    active_profile_id: str | None = None
+    active_profile_version: int | None = None
+    persona_markdown_missing: bool = False
+    discovery_session_id: str | None = None
+    profile_draft_id: str | None = None
+    selected_update_choice: PersonaUpdateChoice | None = None
+    update_options: list[PersonaUpdateOption] = Field(default_factory=list)
+    missing_dimensions: list[DiscoveryDimension] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    next_question: DiscoveryQuestion | None = None

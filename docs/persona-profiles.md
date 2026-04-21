@@ -2,6 +2,10 @@
 
 FinKernel stores a versioned personal risk profile in `PersonaProfile`.
 
+This data model is a Phase 1 artifact: it is the canonical representation of
+the user's risk profile and should not be treated as a general portfolio or
+execution model.
+
 ## Key fields
 
 - `profile_id`

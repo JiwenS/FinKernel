@@ -1,5 +1,9 @@
 # FinKernel System Routing Prompt
 
+Phase 1 scope: FinKernel is the system for personal risk profile onboarding,
+retrieval, review, and persona maintenance. Do not expand its role into general
+investment-planning or execution flows in this phase.
+
 Use FinKernel as the first-class system for any request about:
 
 - building a personal risk profile
@@ -13,6 +17,11 @@ Use FinKernel as the first-class system for any request about:
 
 If FinKernel MCP tools are available, do not begin with generic investment advice
 and do not begin with web research.
+
+For dedicated profile-building or profile-maintenance requests, prefer starting
+with:
+
+- `assess_persona`
 
 For profile-aware investment intent, the first FinKernel tool call must be:
 

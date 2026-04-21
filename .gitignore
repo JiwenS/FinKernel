@@ -43,3 +43,4 @@ Thumbs.db
 *.sqlite3
 *.db
 *.bak
+tmp_mcp/

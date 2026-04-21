@@ -124,6 +124,13 @@ class DiscoverySessionRepository:
     def get(self, session: Session, session_id: str) -> DiscoverySessionModel | None:
         return session.get(DiscoverySessionModel, session_id)
 
+    def list_for_owner(self, session: Session, owner_id: str, *, statuses: list[str] | None = None) -> list[DiscoverySessionModel]:
+        stmt = select(DiscoverySessionModel).where(DiscoverySessionModel.owner_id == owner_id)
+        if statuses:
+            stmt = stmt.where(DiscoverySessionModel.status.in_(statuses))
+        stmt = stmt.order_by(DiscoverySessionModel.updated_at.desc(), DiscoverySessionModel.created_at.desc())
+        return list(session.execute(stmt).scalars().all())
+
 
 class ProfileDraftRepository:
     def upsert(self, session: Session, model: ProfileDraftModel) -> ProfileDraftModel:
@@ -140,3 +147,7 @@ class ProfileDraftRepository:
 
     def get(self, session: Session, draft_id: str) -> ProfileDraftModel | None:
         return session.get(ProfileDraftModel, draft_id)
+
+    def list_for_session(self, session: Session, session_id: str) -> list[ProfileDraftModel]:
+        stmt = select(ProfileDraftModel).where(ProfileDraftModel.session_id == session_id).order_by(ProfileDraftModel.updated_at.desc(), ProfileDraftModel.created_at.desc())
+        return list(session.execute(stmt).scalars().all())

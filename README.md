@@ -13,8 +13,20 @@ The product surface is intentionally narrow:
 
 Everything outside that scope has been removed from the active product path.
 
+## Current Delivery Phase
+
+Phase 1 is the personal risk profile foundation.
+
+In this phase, FinKernel only owns onboarding, discovery, review/versioning,
+persona artifacts, and profile memory needed for profile-aware investment
+guidance. Broader investment planning, recommendation generation, market
+research orchestration, and execution flows are outside the current phase.
+
 ## Read This First
 
+- Docs index:
+  - English: `docs/README.en.md`
+  - 简体中文: `docs/README.zh-CN.md`
 - `docs/README.md`
 - `docs/setup-and-run.md`
 - `docs/persona-profiles.md`
@@ -32,6 +44,7 @@ HTTP:
 
 - `GET /api/health`
 - `GET /api/profiles/onboarding-status`
+- `POST /api/profiles/assess-persona`
 - `GET /api/profiles/{profile_id}`
 - `GET /api/profiles/{profile_id}/risk-summary`
 - `GET /api/profiles/{profile_id}/persona.md`
@@ -54,12 +67,15 @@ MCP:
 
 ## Quick Start
 
-1. Create a local env file if needed.
+1. Bootstrap a local clone:
+   - `powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-local.ps1`
 2. Start the app:
-   - `uvicorn finkernel.main:app --reload`
+   - `powershell -ExecutionPolicy Bypass -File .\scripts\run-local.ps1`
 3. Confirm health:
    - `http://localhost:8000/api/health`
-4. Start profile discovery:
+4. If you skipped automatic agent registration, register `config/host-agent-mcp-http.local.json` or `config/host-agent-mcp-stdio.local.json` and inject `prompts/finkernel_system_routing.md`.
+5. Start profile discovery or use the orchestration entrypoint:
+   - `POST /api/profiles/assess-persona`
    - `POST /api/profiles/discovery/sessions`
 
 ## Configuration
@@ -67,6 +83,8 @@ MCP:
 - `config/persona-profiles.json` stores seed risk profiles.
 - `config/persona-profiles.example.json` is the template.
 - `config/host-agent-mcp-http.example.json` and `config/host-agent-mcp-stdio.example.json` show how to register FinKernel as an MCP server.
+- `scripts/bootstrap-local.ps1` creates `.venv`, installs dependencies, guides `.env` setup, initializes PostgreSQL + `vector`, writes local HTTP/stdio MCP configs, and prepares an agent bundle for Codex/OpenClaw/custom clients.
+- `scripts/run-local.ps1` starts the local FastAPI runtime on `http://localhost:8000`.
 
 ## Documentation Contract
 
