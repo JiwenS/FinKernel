@@ -165,25 +165,25 @@ function Prompt-DotEnvValues {
     }
 }
 
-function Get-DockerComposeCommand {
+function Get-DockerComposeMode {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
         throw "Docker CLI was not found. Install Docker Desktop (or Docker Engine with docker compose) and rerun scripts\\bootstrap-local.ps1."
     }
 
     try {
-        & docker version | Out-Null
+        & docker version *> $null
     }
     catch {
         throw "Docker is installed but not reachable. Start Docker and rerun scripts\\bootstrap-local.ps1."
     }
 
     try {
-        & docker compose version | Out-Null
-        return @("docker", "compose")
+        & docker compose version *> $null
+        return "plugin"
     }
     catch {
         if (Get-Command docker-compose -ErrorAction SilentlyContinue) {
-            return @("docker-compose")
+            return "legacy"
         }
         throw "Docker compose was not found. Install a Docker version that includes docker compose and rerun scripts\\bootstrap-local.ps1."
     }
@@ -191,18 +191,18 @@ function Get-DockerComposeCommand {
 
 function Invoke-DockerCompose {
     param(
-        [string[]]$ComposeCommand,
-        [string[]]$Args,
+        [string]$ComposeMode,
+        [string[]]$ComposeArgs,
         [string]$RepoRoot
     )
 
     Push-Location $RepoRoot
     try {
-        if ($ComposeCommand.Count -eq 1) {
-            & $ComposeCommand[0] @Args
+        if ($ComposeMode -eq "legacy") {
+            & docker-compose @ComposeArgs
         }
         else {
-            & $ComposeCommand[0] $ComposeCommand[1] @Args
+            & docker compose @ComposeArgs
         }
         if ($LASTEXITCODE -ne 0) {
             throw "Docker compose command failed."
@@ -257,6 +257,20 @@ function Write-McpHttpConfig {
 
     $httpConfig | ConvertTo-Json -Depth 8 | Set-Content -Path $httpConfigPath -Encoding UTF8
     return $httpConfigPath
+}
+
+function Write-InstallState {
+    param(
+        [string]$RepoRoot,
+        [hashtable]$State
+    )
+
+    $configDir = Join-Path $RepoRoot "config"
+    Ensure-Directory -Path $configDir
+
+    $statePath = Join-Path $configDir "bootstrap-install-state.local.json"
+    $State | ConvertTo-Json -Depth 8 | Set-Content -Path $statePath -Encoding UTF8
+    return $statePath
 }
 
 function Write-AgentBundle {
@@ -489,8 +503,8 @@ if (-not (Test-Path $profileSeedPath)) {
     Copy-Item (Join-Path $repoRoot "config\\persona-profiles.example.json") $profileSeedPath
 }
 
-$composeCommand = Get-DockerComposeCommand
-Invoke-DockerCompose -ComposeCommand $composeCommand -Args @("up", "-d", "--build", "--remove-orphans") -RepoRoot $repoRoot
+$composeMode = Get-DockerComposeMode
+Invoke-DockerCompose -ComposeMode $composeMode -ComposeArgs @("up", "-d", "--build", "--remove-orphans") -RepoRoot $repoRoot
 
 $appPort = $envValues.APP_PORT
 $mcpUrl = "http://localhost:$appPort/api/mcp/"
@@ -517,6 +531,19 @@ if ($agentChoice -ne "Skip agent integration") {
     }
 }
 
+$installStatePath = Write-InstallState -RepoRoot $repoRoot -State @{
+    installed_at_utc = (Get-Date).ToUniversalTime().ToString("o")
+    env_path = $envPath
+    profile_seed_path = $profileSeedPath
+    http_config_path = $httpConfigPath
+    app_port = $appPort
+    mcp_url = $mcpUrl
+    agent_choice = $agentChoice
+    bundle_root = $bundleRoot
+    agent_registration_attempted = (-not $SkipAgentRegistration)
+    agent_registration_succeeded = [bool]($registrationResult -and $registrationResult.Registered)
+}
+
 Write-Host ""
 Write-Host "FinKernel bootstrap complete." -ForegroundColor Green
 Write-Host ""
@@ -530,6 +557,9 @@ Write-Host "  FinKernel MCP    -> $mcpUrl"
 Write-Host ""
 Write-Host "MCP config:"
 Write-Host "  HTTP -> $httpConfigPath"
+Write-Host ""
+Write-Host "Install manifest:"
+Write-Host "  $installStatePath"
 Write-Host ""
 if ($bundleRoot) {
     Write-Host "Injected agent bundle:"

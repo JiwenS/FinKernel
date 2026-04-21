@@ -30,8 +30,8 @@ tests/
 .env.*
 !.env.example
 config/host-agent-mcp-http.local.json
-config/host-agent-mcp-stdio.local.json
 config/persona-profiles.json
+config/bootstrap-install-state.local.json
 rules/
 
 # IDE / OS

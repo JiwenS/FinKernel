@@ -125,6 +125,14 @@ http://localhost:8000/api/mcp/
 
 如果你在 `.env` 中修改了 `APP_PORT`，请把上面的 `8000` 换成你自己的端口。
 
+### 卸载
+
+如果你要移除 FinKernel 的 Docker stack、本地生成文件，以及已经安装到各类 agent 里的 FinKernel bundle，可以运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-local.ps1
+```
+
 ### 启动流程图
 
 ```mermaid

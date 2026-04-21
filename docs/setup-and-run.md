@@ -45,6 +45,22 @@ MCP endpoint:
 
 If you changed `APP_PORT` in `.env`, use that port instead of `8000`.
 
+## Uninstall the local stack
+
+To remove the FinKernel Docker stack, generated local files, and installed FinKernel agent bundles:
+
+- `powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-local.ps1`
+
+Helpful switches:
+
+- `-Yes`: skip the confirmation prompt
+- `-KeepEnv`: keep `.env`
+- `-KeepSeedData`: keep `config/persona-profiles.json`
+- `-KeepAgentBundles`: keep installed `finkernel-agent` bundles
+- `-SkipAgentUnregistration`: keep MCP registrations in host agents
+- `-KeepDockerVolumes`: keep Docker volumes
+- `-KeepLocalImage`: keep the locally built Docker image
+
 ## Manual Docker path
 
 The supported manual alternative is still Docker-based:

@@ -125,6 +125,14 @@ http://localhost:8000/api/mcp/
 
 If you changed `APP_PORT` in `.env`, use that port instead of `8000`.
 
+### Uninstall
+
+To remove the FinKernel Docker stack, generated local files, and installed FinKernel agent bundles:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-local.ps1
+```
+
 ### Setup flow
 
 ```mermaid

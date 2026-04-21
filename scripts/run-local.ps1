@@ -33,25 +33,25 @@ function Get-DotEnvValue {
     return $Default
 }
 
-function Get-DockerComposeCommand {
+function Get-DockerComposeMode {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
         throw "Docker CLI was not found. Install Docker Desktop (or Docker Engine with docker compose) and rerun scripts\\run-local.ps1."
     }
 
     try {
-        & docker version | Out-Null
+        & docker version *> $null
     }
     catch {
         throw "Docker is installed but not reachable. Start Docker and rerun scripts\\run-local.ps1."
     }
 
     try {
-        & docker compose version | Out-Null
-        return @("docker", "compose")
+        & docker compose version *> $null
+        return "plugin"
     }
     catch {
         if (Get-Command docker-compose -ErrorAction SilentlyContinue) {
-            return @("docker-compose")
+            return "legacy"
         }
         throw "Docker compose was not found. Install a Docker version that includes docker compose and rerun scripts\\run-local.ps1."
     }
@@ -59,18 +59,18 @@ function Get-DockerComposeCommand {
 
 function Invoke-DockerCompose {
     param(
-        [string[]]$ComposeCommand,
-        [string[]]$Args,
+        [string]$ComposeMode,
+        [string[]]$ComposeArgs,
         [string]$RepoRoot
     )
 
     Push-Location $RepoRoot
     try {
-        if ($ComposeCommand.Count -eq 1) {
-            & $ComposeCommand[0] @Args
+        if ($ComposeMode -eq "legacy") {
+            & docker-compose @ComposeArgs
         }
         else {
-            & $ComposeCommand[0] $ComposeCommand[1] @Args
+            & docker compose @ComposeArgs
         }
         if ($LASTEXITCODE -ne 0) {
             throw "Docker compose command failed."
@@ -110,9 +110,9 @@ if (-not (Test-Path $envPath)) {
 }
 
 $appPort = Get-DotEnvValue -Path $envPath -Key "APP_PORT" -Default "8000"
-$composeCommand = Get-DockerComposeCommand
+$composeMode = Get-DockerComposeMode
 
-Invoke-DockerCompose -ComposeCommand $composeCommand -Args @("up", "-d", "--build", "--remove-orphans") -RepoRoot $repoRoot
+Invoke-DockerCompose -ComposeMode $composeMode -ComposeArgs @("up", "-d", "--build", "--remove-orphans") -RepoRoot $repoRoot
 Wait-ForHttpHealth -Url "http://localhost:$appPort/api/health" -TimeoutSeconds $TimeoutSeconds
 
 Write-Host ""
