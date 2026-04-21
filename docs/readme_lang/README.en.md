@@ -1,7 +1,7 @@
 # FinKernel
 
-[![Readme: English](https://img.shields.io/badge/Readme-English-2563EB?style=flat-square)](docs/readme_lang/README.en.md)
-[![Readme: 简体中文](https://img.shields.io/badge/Readme-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-E67E22?style=flat-square)](docs/readme_lang/README.zh-CN.md)
+[![Readme: English](https://img.shields.io/badge/Readme-English-2563EB?style=flat-square)](README.en.md)
+[![Readme: 简体中文](https://img.shields.io/badge/Readme-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-E67E22?style=flat-square)](README.zh-CN.md)
 
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Profile_API-009688?style=flat-square&logo=fastapi&logoColor=white)
@@ -126,10 +126,10 @@ flowchart LR
 
 For deeper setup details, see:
 
-- `docs/setup-and-run.md`
-- `docs/host-agent-runtime-integration.md`
-- `config/host-agent-mcp-http.example.json`
-- `config/host-agent-mcp-stdio.example.json`
+- `../setup-and-run.md`
+- `../host-agent-runtime-integration.md`
+- `../../config/host-agent-mcp-http.example.json`
+- `../../config/host-agent-mcp-stdio.example.json`
 
 ## Usage
 
@@ -137,9 +137,9 @@ For deeper setup details, see:
 
 | Asset | Purpose |
 | --- | --- |
-| `SKILL.md` | Top-level host-agent skill for routing profile-aware conversations into FinKernel |
-| `prompts/persona_assessment.md` | Prompt template keyed off `assess_persona` status values |
-| `prompts/finkernel_system_routing.md` | System routing policy so the host reads profile context before generic finance advice |
+| `../../SKILL.md` | Top-level host-agent skill for routing profile-aware conversations into FinKernel |
+| `../../prompts/persona_assessment.md` | Prompt template keyed off `assess_persona` status values |
+| `../../prompts/finkernel_system_routing.md` | System routing policy so the host reads profile context before generic finance advice |
 
 ### Core MCP tools
 
@@ -178,18 +178,16 @@ For deeper setup details, see:
 
 ## Read This First
 
-- `docs/README.md`
-- `docs/readme_lang/README.en.md`
-- `docs/readme_lang/README.zh-CN.md`
-- `docs/setup-and-run.md`
-- `docs/persona-profiles.md`
-- `docs/persona-agent-workflow.md`
-- `docs/investment-conversation-routing.md`
-- `docs/upper-layer-agent-integration.md`
-- `docs/host-agent-runtime-integration.md`
-- `docs/troubleshooting.md`
-- `prompts/finkernel_system_routing.md`
-- `SKILL.md`
+- `../README.md`
+- `../setup-and-run.md`
+- `../persona-profiles.md`
+- `../persona-agent-workflow.md`
+- `../investment-conversation-routing.md`
+- `../upper-layer-agent-integration.md`
+- `../host-agent-runtime-integration.md`
+- `../troubleshooting.md`
+- `../../prompts/finkernel_system_routing.md`
+- `../../SKILL.md`
 
 ## Star History
 
