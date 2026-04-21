@@ -14,8 +14,10 @@ That bootstrap script will:
 - initialize PostgreSQL and enable the `vector` extension
 - copy `config/persona-profiles.example.json` into `config/persona-profiles.json` if missing
 - write `config/host-agent-mcp-http.local.json` and `config/host-agent-mcp-stdio.local.json`
-- inject a ready-to-copy bundle for the selected host agent
-- optionally register FinKernel with Codex automatically
+- inject a ready-to-copy FinKernel skill bundle for the selected host agent
+- prioritize four first-class agents: `Codex`, `Claude Code`, `OpenClaw`, and `Hermes`
+- automatically register MCP for supported agents when their CLI is available
+- fall back to a `Custom MCP client` export path for every other host runtime
 
 ## Manual local setup
 
@@ -41,9 +43,13 @@ Health check:
 
 ## Connect a host agent
 
-1. If you used the bootstrap script, use `config/host-agent-mcp-http.local.json` or `config/host-agent-mcp-stdio.local.json`.
-2. If you need a manual example instead, use `config/host-agent-mcp-http.example.json` or `config/host-agent-mcp-stdio.example.json`.
-3. Inject `prompts/finkernel_system_routing.md` into the host runtime.
+1. Run `scripts/bootstrap-local.ps1` and pick one of the four first-class agents:
+   - `Codex`: installs the FinKernel skill into `~/.codex/skills` and tries `codex mcp add`
+   - `Claude Code`: installs the FinKernel skill into `~/.claude/skills` and tries `claude mcp add --transport http`
+   - `OpenClaw`: installs the FinKernel skill into `~/.openclaw/skills` and tries `openclaw mcp set`
+   - `Hermes`: installs the FinKernel skill into `~/.hermes/skills` and tries `hermes config set mcp_servers.finkernel.url`
+2. If you need a manual example instead, use `config/host-agent-mcp-http.local.json`, `config/host-agent-mcp-stdio.local.json`, `config/host-agent-mcp-http.example.json`, or `config/host-agent-mcp-stdio.example.json`.
+3. Keep `prompts/finkernel_system_routing.md` available to the host runtime.
 4. Use `prompts/persona_assessment.md` as the host-side assessment prompt template.
 5. Use `SKILL.md` as the top-level profile-building skill.
 6. For a single-entry orchestration flow, start with `assess_persona`.

@@ -23,15 +23,17 @@ If the user cloned the repo and wants a working local install with host-agent
 registration in one pass, start here:
 
 1. run `powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-local.ps1`
-2. let the installer register Codex automatically, or use the generated bundle + local MCP configs for another agent
-3. inject `prompts/finkernel_system_routing.md`
-4. use `prompts/persona_assessment.md` for the assessment conversation layer
-5. use `SKILL.md` as the host-side skill entrypoint
+2. let the installer fast-path one of the four first-class agents: `Codex`, `Claude Code`, `OpenClaw`, or `Hermes`
+3. let the installer auto-register MCP when that agent's CLI is available, or fall back to the generated bundle + local MCP configs for a custom host
+4. inject `prompts/finkernel_system_routing.md`
+5. use `prompts/persona_assessment.md` for the assessment conversation layer
+6. use `SKILL.md` as the host-side skill entrypoint
 
 The bootstrap script prepares `.venv`, installs dependencies, guides `.env`
 setup, initializes PostgreSQL with the `vector` extension, seeds local profile
-data, emits local HTTP + stdio MCP configs, and writes an injected bundle for
-the selected host agent directory.
+data, emits local HTTP + stdio MCP configs, writes a FinKernel skill bundle
+into the selected agent directory, and attempts agent-specific MCP registration
+for Codex, Claude Code, OpenClaw, or Hermes.
 
 ## Prompt layer
 

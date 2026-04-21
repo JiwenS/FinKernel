@@ -1,0 +1,8 @@
+﻿{
+    "mcpServers":  {
+                       "finkernel":  {
+                                         "type":  "streamable-http",
+                                         "url":  "http://localhost:8000/api/mcp/"
+                                     }
+                   }
+}

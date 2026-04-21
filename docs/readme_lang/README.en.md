@@ -1,13 +1,14 @@
 # FinKernel
 
 [![Readme: English](https://img.shields.io/badge/Readme-English-2563EB?style=flat-square)](README.en.md)
-[![Readme: 简体中文](https://img.shields.io/badge/Readme-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-E67E22?style=flat-square)](README.zh-CN.md)
+[![Readme: Chinese](https://img.shields.io/badge/Readme-Chinese-E67E22?style=flat-square)](README.zh-CN.md)
 
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Profile_API-009688?style=flat-square&logo=fastapi&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgsql-4169E1?style=flat-square&logo=postgresql&logoColor=white)
 ![pgvector](https://img.shields.io/badge/pgvector-enabled-0F766E?style=flat-square)
 ![MCP](https://img.shields.io/badge/MCP-host_agent_ready-111827?style=flat-square)
+![Hosts](https://img.shields.io/badge/Hosts-Codex%20%7C%20Claude%20Code%20%7C%20OpenClaw%20%7C%20Hermes-0F766E?style=flat-square)
 ![Phase](https://img.shields.io/badge/Phase-Profile_Foundation-7C3AED?style=flat-square)
 
 FinKernel is an AI-native financial infrastructure project designed to lower the barrier to family-office-grade workflows. Our goal is simple: give every household and every ordinary investor access to better financial context, better tooling, and better decision support.
@@ -90,9 +91,10 @@ That bootstrap flow is designed to feel like a guided installer, not a raw scrip
 - walk through `.env` setup one field at a time
 - initialize PostgreSQL and enable `vector`
 - create local MCP configs
-- prepare a host-agent bundle
-- optionally register FinKernel with Codex automatically
-- support selecting the target install directory for agent-side assets
+- prioritize four first-class host agents: `Codex`, `Claude Code`, `OpenClaw`, and `Hermes`
+- install a FinKernel skill bundle into the selected agent's native skills directory
+- attempt agent-specific MCP registration when the corresponding CLI is available
+- fall back to a `Custom MCP client` export path for every other host runtime
 
 ### Bring the project up
 
@@ -120,7 +122,7 @@ flowchart LR
     B --> C[bootstrap-local.ps1]
     C --> D[Guided .env Setup]
     D --> E[PostgreSQL plus pgvector Ready]
-    E --> F[MCP Config and Agent Bundle]
+    E --> F[Agent-Aware MCP Setup]
     F --> G[run-local.ps1]
 ```
 
@@ -140,6 +142,16 @@ For deeper setup details, see:
 | `../../SKILL.md` | Top-level host-agent skill for routing profile-aware conversations into FinKernel |
 | `../../prompts/persona_assessment.md` | Prompt template keyed off `assess_persona` status values |
 | `../../prompts/finkernel_system_routing.md` | System routing policy so the host reads profile context before generic finance advice |
+
+### First-class host agents
+
+| Agent | Fast-path setup |
+| --- | --- |
+| `Codex` | Install FinKernel into `~/.codex/skills/finkernel-agent` and try `codex mcp add` |
+| `Claude Code` | Install FinKernel into `~/.claude/skills/finkernel-agent` and try `claude mcp add --transport http --scope local` |
+| `OpenClaw` | Install FinKernel into `~/.openclaw/skills/finkernel-agent` and try `openclaw mcp set` with `streamable-http` |
+| `Hermes` | Install FinKernel into `~/.hermes/skills/finkernel-agent` and try `hermes config set mcp_servers.finkernel.url` |
+| `Custom MCP client` | Use the exported `host-agent-mcp-http.json` or `host-agent-mcp-stdio.json` bundle files manually |
 
 ### Core MCP tools
 

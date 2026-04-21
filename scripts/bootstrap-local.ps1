@@ -224,15 +224,14 @@ function Write-AgentBundle {
         [string]$StdioConfigPath
     )
 
-    $bundleRoot = Join-Path $TargetDirectory "FinKernel"
+    $bundleRoot = Join-Path $TargetDirectory "finkernel-agent"
     $bundlePromptDir = Join-Path $bundleRoot "prompts"
     Ensure-Directory -Path $bundlePromptDir
 
     Copy-Item $HttpConfigPath (Join-Path $bundleRoot "host-agent-mcp-http.json") -Force
     Copy-Item $StdioConfigPath (Join-Path $bundleRoot "host-agent-mcp-stdio.json") -Force
     Copy-Item (Join-Path $RepoRoot "SKILL.md") (Join-Path $bundleRoot "SKILL.md") -Force
-    Copy-Item (Join-Path $RepoRoot "prompts\\finkernel_system_routing.md") (Join-Path $bundlePromptDir "finkernel_system_routing.md") -Force
-    Copy-Item (Join-Path $RepoRoot "prompts\\persona_assessment.md") (Join-Path $bundlePromptDir "persona_assessment.md") -Force
+    Copy-Item (Join-Path $RepoRoot "prompts\\*.md") $bundlePromptDir -Force
 
     $bundleReadme = @"
 FinKernel agent bundle
@@ -240,12 +239,66 @@ FinKernel agent bundle
 - host-agent-mcp-http.json: HTTP MCP registration
 - host-agent-mcp-stdio.json: local stdio MCP registration
 - SKILL.md: top-level host skill
-- prompts\\finkernel_system_routing.md: system routing prompt
-- prompts\\persona_assessment.md: assess_persona prompt template
+- prompts\\: full FinKernel routing + persona prompt pack
 "@
     $bundleReadme | Set-Content -Path (Join-Path $bundleRoot "README.txt") -Encoding UTF8
 
     return $bundleRoot
+}
+
+function Get-AgentBundleDefaultDirectory {
+    param(
+        [string]$AgentChoice,
+        [string]$RepoRoot
+    )
+
+    switch ($AgentChoice) {
+        "Codex" {
+            return Join-Path $HOME ".codex\\skills"
+        }
+        "Claude Code" {
+            return Join-Path $HOME ".claude\\skills"
+        }
+        "OpenClaw" {
+            return Join-Path $HOME ".openclaw\\skills"
+        }
+        "Hermes" {
+            return Join-Path $HOME ".hermes\\skills"
+        }
+        "Custom MCP client" {
+            return Join-Path $RepoRoot "integration\\custom-mcp-client"
+        }
+        default {
+            return Join-Path $RepoRoot ("integration\\" + $AgentChoice.ToLower().Replace(" ", "-"))
+        }
+    }
+}
+
+function Get-AgentBundlePromptMessage {
+    param(
+        [string]$AgentChoice
+    )
+
+    switch ($AgentChoice) {
+        "Codex" {
+            return "Target parent directory for Codex skill installation"
+        }
+        "Claude Code" {
+            return "Target parent directory for Claude Code skill installation"
+        }
+        "OpenClaw" {
+            return "Target parent directory for OpenClaw skill installation"
+        }
+        "Hermes" {
+            return "Target parent directory for Hermes skill installation"
+        }
+        "Custom MCP client" {
+            return "Target directory for exported MCP configs and skill bundle"
+        }
+        default {
+            return "Target directory for injected prompts/skill/config bundle"
+        }
+    }
 }
 
 function Register-CodexMcp {
@@ -265,6 +318,112 @@ function Register-CodexMcp {
     catch {
         Write-Host "Codex MCP registration failed: $($_.Exception.Message)" -ForegroundColor Yellow
         return $false
+    }
+}
+
+function Register-ClaudeCodeMcp {
+    param(
+        [string]$McpUrl
+    )
+
+    if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+        Write-Host "Claude Code CLI was not found. Skipping automatic Claude Code registration." -ForegroundColor Yellow
+        return $false
+    }
+
+    try {
+        & claude mcp add --transport http finkernel --scope local $McpUrl
+        return $true
+    }
+    catch {
+        Write-Host "Claude Code MCP registration failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        return $false
+    }
+}
+
+function Register-OpenClawMcp {
+    param(
+        [string]$McpUrl
+    )
+
+    if (-not (Get-Command openclaw -ErrorAction SilentlyContinue)) {
+        Write-Host "OpenClaw CLI was not found. Skipping automatic OpenClaw registration." -ForegroundColor Yellow
+        return $false
+    }
+
+    try {
+        $serverDefinition = @{
+            url = $McpUrl
+            transport = "streamable-http"
+        } | ConvertTo-Json -Compress
+
+        & openclaw mcp set finkernel $serverDefinition
+        return $true
+    }
+    catch {
+        Write-Host "OpenClaw MCP registration failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        return $false
+    }
+}
+
+function Register-HermesMcp {
+    param(
+        [string]$McpUrl
+    )
+
+    if (-not (Get-Command hermes -ErrorAction SilentlyContinue)) {
+        Write-Host "Hermes CLI was not found. Skipping automatic Hermes registration." -ForegroundColor Yellow
+        return $false
+    }
+
+    try {
+        & hermes config set mcp_servers.finkernel.url $McpUrl
+        return $true
+    }
+    catch {
+        Write-Host "Hermes MCP registration failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        return $false
+    }
+}
+
+function Register-AgentMcp {
+    param(
+        [string]$AgentChoice,
+        [string]$McpUrl
+    )
+
+    switch ($AgentChoice) {
+        "Codex" {
+            return @{
+                Registered = Register-CodexMcp -McpUrl $McpUrl
+                Label = "Codex MCP registration"
+                SuccessMessage = "FinKernel was registered with codex mcp add."
+            }
+        }
+        "Claude Code" {
+            return @{
+                Registered = Register-ClaudeCodeMcp -McpUrl $McpUrl
+                Label = "Claude Code MCP registration"
+                SuccessMessage = "FinKernel was registered with claude mcp add."
+            }
+        }
+        "OpenClaw" {
+            return @{
+                Registered = Register-OpenClawMcp -McpUrl $McpUrl
+                Label = "OpenClaw MCP registration"
+                SuccessMessage = "FinKernel was saved into the OpenClaw MCP registry."
+            }
+        }
+        "Hermes" {
+            return @{
+                Registered = Register-HermesMcp -McpUrl $McpUrl
+                Label = "Hermes MCP registration"
+                SuccessMessage = "FinKernel was written into ~/.hermes/config.yaml."
+            }
+        }
+        default {
+            return $null
+        }
     }
 }
 
@@ -360,13 +519,14 @@ if (-not (Test-Path $profileSeedPath)) {
 
 $configPaths = Write-McpConfigs -RepoRoot $repoRoot -PythonPath $venvPython
 
-$agentChoice = Prompt-Choice -Message "Which host agent should FinKernel integrate with?" -Options @("Codex", "OpenClaw", "Generic MCP client", "Skip agent integration") -DefaultIndex 0
+$agentChoice = Prompt-Choice -Message "Which host agent should FinKernel integrate with?" -Options @("Codex", "Claude Code", "OpenClaw", "Hermes", "Custom MCP client", "Skip agent integration") -DefaultIndex 0
 $bundleRoot = $null
-$codexRegistered = $false
+$registrationResult = $null
 
 if ($agentChoice -ne "Skip agent integration") {
-    $bundleDefault = Join-Path $repoRoot ("integration\\" + $agentChoice.ToLower().Replace(" ", "-"))
-    $bundleDir = Prompt-Value -Message "Target directory for injected prompts/skill/config bundle" -Default $bundleDefault
+    $bundleDefault = Get-AgentBundleDefaultDirectory -AgentChoice $agentChoice -RepoRoot $repoRoot
+    $bundlePrompt = Get-AgentBundlePromptMessage -AgentChoice $agentChoice
+    $bundleDir = Prompt-Value -Message $bundlePrompt -Default $bundleDefault
     Ensure-Directory -Path $bundleDir
     $bundleRoot = Write-AgentBundle `
         -RepoRoot $repoRoot `
@@ -374,8 +534,8 @@ if ($agentChoice -ne "Skip agent integration") {
         -HttpConfigPath $configPaths.Http `
         -StdioConfigPath $configPaths.Stdio
 
-    if ($agentChoice -eq "Codex" -and -not $SkipAgentRegistration) {
-        $codexRegistered = Register-CodexMcp -McpUrl "http://localhost:8000/api/mcp/"
+    if (-not $SkipAgentRegistration) {
+        $registrationResult = Register-AgentMcp -AgentChoice $agentChoice -McpUrl "http://localhost:8000/api/mcp/"
     }
 }
 
@@ -400,9 +560,9 @@ if ($bundleRoot) {
     Write-Host "  $bundleRoot"
     Write-Host ""
 }
-if ($codexRegistered) {
-    Write-Host "Codex MCP registration:"
-    Write-Host "  FinKernel was registered with codex mcp add."
+if ($registrationResult -and $registrationResult.Registered) {
+    Write-Host "$($registrationResult.Label):"
+    Write-Host "  $($registrationResult.SuccessMessage)"
     Write-Host ""
 }
 Write-Host "Run FinKernel locally with:"
