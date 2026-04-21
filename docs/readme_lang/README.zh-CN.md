@@ -10,6 +10,7 @@
 ![MCP](https://img.shields.io/badge/MCP-host_agent_ready-111827?style=flat-square)
 ![Hosts](https://img.shields.io/badge/Hosts-Codex%20%7C%20Claude%20Code%20%7C%20OpenClaw%20%7C%20Hermes-0F766E?style=flat-square)
 ![Phase](https://img.shields.io/badge/Phase-Profile_Foundation-7C3AED?style=flat-square)
+![Runtime](https://img.shields.io/badge/Runtime-Docker_Only-1D4ED8?style=flat-square)
 
 FinKernel 是一个面向 AI 的金融基础设施项目，目标是把原本只有 family office 才能享受的工作流能力，逐步普惠给每一个家庭和每一个普通投资者。
 
@@ -76,6 +77,12 @@ Phase 1 的重点是先把 personal risk profile 这层地基打稳。
 
 ## 安装
 
+### 官方本地安装路径
+
+FinKernel v1 当前只支持一种官方本地安装方式：
+
+- 仅支持 Docker
+
 ### 最快路径
 
 ```powershell
@@ -86,17 +93,19 @@ powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-local.ps1
 
 这个 bootstrap 流程的目标不是“只是跑一个脚本”，而是像一个引导式安装器。它会：
 
-- 创建 `.venv`
-- 安装依赖
 - 逐项引导 `.env` 配置
-- 初始化 PostgreSQL 并启用 `vector`
-- 生成本地 MCP 配置
-- 优先支持四个一等公民 agent：`Codex`、`Claude Code`、`OpenClaw`、`Hermes`
+- 确保 `config/persona-profiles.json` 会从示例 seed 自动生成
+- 用 Docker 启动 FinKernel 与带 pgvector 的 PostgreSQL
+- 等待 HTTP app 和 MCP endpoint 变为可用
+- 生成本地 HTTP MCP 配置
+- 优先支持四个一等公民 host agent：`Codex`、`Claude Code`、`OpenClaw`、`Hermes`
 - 把 FinKernel skill bundle 安装到对应 agent 的原生 skills 目录
-- 在检测到对应 CLI 时自动尝试完成 MCP 注册
+- 在检测到对应 CLI 时自动尝试完成 HTTP MCP 注册
 - 对其他宿主保留 `Custom MCP client` 导出路径
 
-### 启动项目
+### 后续再次启动项目
+
+首次 bootstrap 完成后，可以用下面的命令重新拉起 Docker stack：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\run-local.ps1
@@ -114,6 +123,8 @@ MCP 地址：
 http://localhost:8000/api/mcp/
 ```
 
+如果你在 `.env` 中修改了 `APP_PORT`，请把上面的 `8000` 换成你自己的端口。
+
 ### 启动流程图
 
 ```mermaid
@@ -121,9 +132,9 @@ flowchart LR
     A[git clone] --> B[cd FinKernel]
     B --> C[bootstrap-local.ps1]
     C --> D[引导式 .env 配置]
-    D --> E[PostgreSQL 与 pgvector 就绪]
-    E --> F[面向 Agent 的 MCP 集成]
-    F --> G[run-local.ps1]
+    D --> E[Docker Compose Up]
+    E --> F[Health Check 与 HTTP MCP 就绪]
+    F --> G[Prompt Skill MCP 注入]
 ```
 
 更详细的安装与集成说明见：
@@ -131,7 +142,6 @@ flowchart LR
 - `../setup-and-run.md`
 - `../host-agent-runtime-integration.md`
 - `../../config/host-agent-mcp-http.example.json`
-- `../../config/host-agent-mcp-stdio.example.json`
 
 ## 使用方式
 
@@ -151,7 +161,7 @@ flowchart LR
 | `Claude Code` | 安装到 `~/.claude/skills/finkernel-agent`，并尝试执行 `claude mcp add --transport http --scope local` |
 | `OpenClaw` | 安装到 `~/.openclaw/skills/finkernel-agent`，并尝试通过 `openclaw mcp set` 写入 `streamable-http` MCP 配置 |
 | `Hermes` | 安装到 `~/.hermes/skills/finkernel-agent`，并尝试执行 `hermes config set mcp_servers.finkernel.url` |
-| `Custom MCP client` | 手动使用导出的 `host-agent-mcp-http.json` 或 `host-agent-mcp-stdio.json` |
+| `Custom MCP client` | 手动使用导出的 `host-agent-mcp-http.json` bundle 文件 |
 
 ### 核心 MCP 工具
 

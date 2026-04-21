@@ -10,6 +10,7 @@
 ![MCP](https://img.shields.io/badge/MCP-host_agent_ready-111827?style=flat-square)
 ![Hosts](https://img.shields.io/badge/Hosts-Codex%20%7C%20Claude%20Code%20%7C%20OpenClaw%20%7C%20Hermes-0F766E?style=flat-square)
 ![Phase](https://img.shields.io/badge/Phase-Profile_Foundation-7C3AED?style=flat-square)
+![Runtime](https://img.shields.io/badge/Runtime-Docker_Only-1D4ED8?style=flat-square)
 
 FinKernel is an AI-native financial infrastructure project designed to lower the barrier to family-office-grade workflows. Our goal is simple: give every household and every ordinary investor access to better financial context, better tooling, and better decision support.
 
@@ -76,6 +77,12 @@ Everything else remains roadmap material for now, and should be communicated tha
 
 ## Install
 
+### Official local path
+
+FinKernel v1 supports one official local installation path:
+
+- Docker-only
+
 ### Fastest path
 
 ```powershell
@@ -86,17 +93,19 @@ powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-local.ps1
 
 That bootstrap flow is designed to feel like a guided installer, not a raw script. It will:
 
-- create `.venv`
-- install dependencies
-- walk through `.env` setup one field at a time
-- initialize PostgreSQL and enable `vector`
-- create local MCP configs
+- guide `.env` setup one field at a time
+- ensure `config/persona-profiles.json` exists from the example seed
+- start Docker services for FinKernel and PostgreSQL with pgvector
+- wait for the HTTP app and MCP endpoint to become usable
+- create a local HTTP MCP config
 - prioritize four first-class host agents: `Codex`, `Claude Code`, `OpenClaw`, and `Hermes`
 - install a FinKernel skill bundle into the selected agent's native skills directory
-- attempt agent-specific MCP registration when the corresponding CLI is available
+- attempt agent-specific HTTP MCP registration when the corresponding CLI is available
 - fall back to a `Custom MCP client` export path for every other host runtime
 
-### Bring the project up
+### Bring the project up again
+
+After the first bootstrap, restart the Docker stack with:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\run-local.ps1
@@ -114,6 +123,8 @@ MCP endpoint:
 http://localhost:8000/api/mcp/
 ```
 
+If you changed `APP_PORT` in `.env`, use that port instead of `8000`.
+
 ### Setup flow
 
 ```mermaid
@@ -121,9 +132,9 @@ flowchart LR
     A[git clone] --> B[cd FinKernel]
     B --> C[bootstrap-local.ps1]
     C --> D[Guided .env Setup]
-    D --> E[PostgreSQL plus pgvector Ready]
-    E --> F[Agent-Aware MCP Setup]
-    F --> G[run-local.ps1]
+    D --> E[Docker Compose Up]
+    E --> F[Health Check and HTTP MCP Ready]
+    F --> G[Prompt Skill MCP Injection]
 ```
 
 For deeper setup details, see:
@@ -131,7 +142,6 @@ For deeper setup details, see:
 - `../setup-and-run.md`
 - `../host-agent-runtime-integration.md`
 - `../../config/host-agent-mcp-http.example.json`
-- `../../config/host-agent-mcp-stdio.example.json`
 
 ## Usage
 
@@ -151,7 +161,7 @@ For deeper setup details, see:
 | `Claude Code` | Install FinKernel into `~/.claude/skills/finkernel-agent` and try `claude mcp add --transport http --scope local` |
 | `OpenClaw` | Install FinKernel into `~/.openclaw/skills/finkernel-agent` and try `openclaw mcp set` with `streamable-http` |
 | `Hermes` | Install FinKernel into `~/.hermes/skills/finkernel-agent` and try `hermes config set mcp_servers.finkernel.url` |
-| `Custom MCP client` | Use the exported `host-agent-mcp-http.json` or `host-agent-mcp-stdio.json` bundle files manually |
+| `Custom MCP client` | Use the exported `host-agent-mcp-http.json` bundle file manually |
 
 ### Core MCP tools
 

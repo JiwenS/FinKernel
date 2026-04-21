@@ -4,10 +4,7 @@ FinKernel exposes MCP over Streamable HTTP at:
 
 - `http://localhost:8000/api/mcp/`
 
-FinKernel now also exposes a local stdio MCP entrypoint for clients that do not handle HTTP MCP well:
-
-- `.\scripts\run-mcp-stdio.ps1`
-- or `.\.venv\Scripts\python.exe -m finkernel.transport.mcp.stdio_runner`
+If you changed `APP_PORT` in `.env`, substitute that port instead of `8000`.
 
 This repo includes a local MCP Inspector install and a ready-to-use config at:
 
@@ -15,8 +12,8 @@ This repo includes a local MCP Inspector install and a ready-to-use config at:
 
 ## Prerequisites
 
-- FinKernel is running locally and healthy:
-  - `.\scripts\e2e-healthcheck.ps1`
+- FinKernel is running locally and healthy through Docker:
+  - `.\scripts\run-local.ps1`
 - Node is installed
 
 ## Open the Inspector UI
@@ -46,13 +43,7 @@ If `6274` or `6277` is already in use, the helper script automatically picks the
 List the tools exposed by the local MCP endpoint:
 
 ```powershell
-npm run mcp:tools
-```
-
-Or:
-
-```powershell
-.\scripts\e2e-mcp-tools.ps1
+.\scripts\run-mcp-inspector.ps1 -Cli --method tools/list
 ```
 
 ## Custom CLI calls
@@ -66,11 +57,10 @@ Examples:
 
 The repo helper intentionally routes CLI mode through the lower-level Inspector CLI entrypoint, because the package's top-level `--cli` wrapper is currently flaky in this environment.
 
-## When to use stdio vs HTTP
+## Transport choice
 
-- Use **HTTP MCP** when you want remote/service-style integration, browser-based Inspector usage, or compatibility with remote MCP clients.
-- Use **stdio MCP** when your GPT/client stack handles local spawned MCP servers better than HTTP transports.
-- Both transports share the same database-backed profile/discovery state and the same tool surface.
+- For the first release, FinKernel's supported local MCP transport is **HTTP MCP** only.
+- Host-agent registration and Inspector workflows should both point at `http://localhost:<APP_PORT>/api/mcp/`.
 
 ## Node version note
 

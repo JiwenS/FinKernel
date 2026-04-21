@@ -1,6 +1,17 @@
 # Setup And Run
 
-## Fastest local path
+## Official local path
+
+FinKernel v1 supports one official local installation path:
+
+- Docker-only
+
+The host machine should have:
+
+- Docker
+- one of the supported host-agent CLIs if you want automatic registration: `codex`, `claude`, `openclaw`, or `hermes`
+
+## Fastest local setup
 
 Run one command from the repo root:
 
@@ -8,38 +19,41 @@ Run one command from the repo root:
 
 That bootstrap script will:
 
-- create `.venv` if needed
-- install `.[dev]`
 - guide `.env` setup one field at a time
-- initialize PostgreSQL and enable the `vector` extension
-- copy `config/persona-profiles.example.json` into `config/persona-profiles.json` if missing
-- write `config/host-agent-mcp-http.local.json` and `config/host-agent-mcp-stdio.local.json`
+- ensure `config/persona-profiles.json` exists from the example seed
+- run `docker compose up -d --build --remove-orphans`
+- wait for PostgreSQL and the FinKernel HTTP app to become healthy
+- write `config/host-agent-mcp-http.local.json`
 - inject a ready-to-copy FinKernel skill bundle for the selected host agent
 - prioritize four first-class agents: `Codex`, `Claude Code`, `OpenClaw`, and `Hermes`
-- automatically register MCP for supported agents when their CLI is available
+- automatically register HTTP MCP for supported agents when their CLI is available
 - fall back to a `Custom MCP client` export path for every other host runtime
 
-## Manual local setup
+## Restart the stack later
 
-1. Create and activate a Python 3.12 virtual environment.
-2. Install the package in editable mode:
-   - `pip install -e .[dev]`
-3. Provision a PostgreSQL database and enable the `vector` extension.
-4. Copy `.env.example` to `.env` and set a PostgreSQL `DATABASE_URL`.
-5. Optionally copy `config/persona-profiles.example.json` into your own seed file.
-
-## Run the HTTP app
+After the first bootstrap, you can bring the Docker stack back up with:
 
 - `powershell -ExecutionPolicy Bypass -File .\scripts\run-local.ps1`
-- `uvicorn finkernel.main:app --reload`
 
 Health check:
 
 - `GET http://localhost:8000/api/health`
 
-## Run the MCP server over stdio
+MCP endpoint:
 
-- `powershell -ExecutionPolicy Bypass -File .\scripts\run-mcp-stdio.ps1`
+- `http://localhost:8000/api/mcp/`
+
+If you changed `APP_PORT` in `.env`, use that port instead of `8000`.
+
+## Manual Docker path
+
+The supported manual alternative is still Docker-based:
+
+1. Copy `.env.example` to `.env`.
+2. Set at least `APP_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD`.
+3. Ensure `config/persona-profiles.json` exists, or copy it from `config/persona-profiles.example.json`.
+4. Run `docker compose up -d --build`.
+5. Wait for `GET /api/health` to return `200`.
 
 ## Connect a host agent
 
@@ -48,7 +62,7 @@ Health check:
    - `Claude Code`: installs the FinKernel skill into `~/.claude/skills` and tries `claude mcp add --transport http`
    - `OpenClaw`: installs the FinKernel skill into `~/.openclaw/skills` and tries `openclaw mcp set`
    - `Hermes`: installs the FinKernel skill into `~/.hermes/skills` and tries `hermes config set mcp_servers.finkernel.url`
-2. If you need a manual example instead, use `config/host-agent-mcp-http.local.json`, `config/host-agent-mcp-stdio.local.json`, `config/host-agent-mcp-http.example.json`, or `config/host-agent-mcp-stdio.example.json`.
+2. If you need a manual example instead, use `config/host-agent-mcp-http.local.json` or `config/host-agent-mcp-http.example.json`.
 3. Keep `prompts/finkernel_system_routing.md` available to the host runtime.
 4. Use `prompts/persona_assessment.md` as the host-side assessment prompt template.
 5. Use `SKILL.md` as the top-level profile-building skill.
@@ -56,5 +70,7 @@ Health check:
 
 ## Useful local checks
 
+- `docker compose ps`
+- `docker compose logs app --tail 200`
 - `pytest`
 - `python .\scripts\verify-investment-routing-contract.py`

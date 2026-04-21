@@ -1,5 +1,4 @@
 param(
-    [switch]$SkipInstall,
     [switch]$SkipAgentRegistration
 )
 
@@ -17,22 +16,6 @@ function Ensure-Directory {
     if (-not (Test-Path $Path)) {
         New-Item -ItemType Directory -Path $Path | Out-Null
     }
-}
-
-function New-LocalVenv {
-    param(
-        [string]$TargetPath
-    )
-
-    if (Get-Command py -ErrorAction SilentlyContinue) {
-        & py -3.12 -m venv $TargetPath
-        return
-    }
-    if (Get-Command python -ErrorAction SilentlyContinue) {
-        & python -m venv $TargetPath
-        return
-    }
-    throw "Python 3.12 was not found. Install Python 3.12 and rerun scripts\\bootstrap-local.ps1."
 }
 
 function Prompt-Choice {
@@ -89,139 +72,198 @@ function Prompt-Value {
     }
 }
 
-function Build-DatabaseUrl {
+function Get-DotEnvDefaults {
+    return @{
+        APP_NAME = "FinKernel"
+        ENVIRONMENT = "development"
+        API_PREFIX = "/api"
+        APP_PORT = "8000"
+        POSTGRES_DB = "finkernel"
+        POSTGRES_USER = "finkernel"
+        POSTGRES_PASSWORD = "change-me"
+        ENABLE_PGVECTOR = "true"
+        PROFILE_STORE_PATH = "config/persona-profiles.json"
+    }
+}
+
+function Read-DotEnv {
     param(
-        [string]$DatabaseHost,
-        [string]$DatabasePort,
-        [string]$DatabaseName,
-        [string]$DatabaseUser,
-        [string]$DatabasePassword
+        [string]$Path
     )
 
-    $escapedUser = [System.Uri]::EscapeDataString($DatabaseUser)
-    $escapedPassword = [System.Uri]::EscapeDataString($DatabasePassword)
-    return "postgresql+psycopg://$escapedUser`:$escapedPassword@$DatabaseHost`:$DatabasePort/$DatabaseName"
+    $values = Get-DotEnvDefaults
+    if (-not (Test-Path $Path)) {
+        return $values
+    }
+
+    foreach ($line in Get-Content -Path $Path) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith("#")) {
+            continue
+        }
+        $parts = $trimmed -split "=", 2
+        if ($parts.Count -ne 2) {
+            continue
+        }
+        $key = $parts[0].Trim()
+        $value = $parts[1].Trim()
+        if ($key) {
+            $values[$key] = $value
+        }
+    }
+
+    return $values
 }
 
 function Write-DotEnv {
     param(
         [string]$Path,
-        [string]$AppName,
-        [string]$Environment,
-        [string]$ApiPrefix,
-        [string]$DatabaseUrl,
-        [string]$ProfileStorePath
+        [hashtable]$Values
     )
 
     $lines = @(
-        "APP_NAME=$AppName",
-        "ENVIRONMENT=$Environment",
-        "API_PREFIX=$ApiPrefix",
-        "DATABASE_URL=$DatabaseUrl",
+        "# Docker-first local defaults for FinKernel Phase 1",
+        "APP_NAME=$($Values.APP_NAME)",
+        "ENVIRONMENT=$($Values.ENVIRONMENT)",
+        "API_PREFIX=$($Values.API_PREFIX)",
+        "",
+        "# Host port exposed by the FinKernel HTTP app.",
+        "APP_PORT=$($Values.APP_PORT)",
+        "",
+        "# PostgreSQL credentials used by the compose-managed pgvector container.",
+        "POSTGRES_DB=$($Values.POSTGRES_DB)",
+        "POSTGRES_USER=$($Values.POSTGRES_USER)",
+        "POSTGRES_PASSWORD=$($Values.POSTGRES_PASSWORD)",
+        "",
+        "# FinKernel always enables pgvector in the Docker-first local stack.",
         "ENABLE_PGVECTOR=true",
-        "PROFILE_STORE_PATH=$ProfileStorePath"
+        "",
+        "# Seed risk profiles used for local bootstrap and demos.",
+        "PROFILE_STORE_PATH=$($Values.PROFILE_STORE_PATH)"
     )
     $lines | Set-Content -Path $Path -Encoding UTF8
 }
 
-function Initialize-PostgresDatabase {
+function Prompt-DotEnvValues {
     param(
-        [string]$PythonPath,
-        [string]$DatabaseHost,
-        [string]$DatabasePort,
-        [string]$DatabaseName,
-        [string]$DatabaseUser,
-        [string]$DatabasePassword,
-        [string]$BootstrapDatabase
+        [hashtable]$CurrentValues
     )
 
-    $env:FINKERNEL_DB_HOST = $DatabaseHost
-    $env:FINKERNEL_DB_PORT = $DatabasePort
-    $env:FINKERNEL_DB_NAME = $DatabaseName
-    $env:FINKERNEL_DB_USER = $DatabaseUser
-    $env:FINKERNEL_DB_PASSWORD = $DatabasePassword
-    $env:FINKERNEL_DB_BOOTSTRAP = $BootstrapDatabase
+    Write-Host ""
+    Write-Host "FinKernel local setup is Docker-only for Phase 1. The installer will configure Docker Compose, start PostgreSQL with pgvector, and then register host-agent MCP access." -ForegroundColor Cyan
 
-    @'
-import os
-
-import psycopg
-from psycopg import sql
-
-host = os.environ["FINKERNEL_DB_HOST"]
-port = os.environ["FINKERNEL_DB_PORT"]
-dbname = os.environ["FINKERNEL_DB_NAME"]
-user = os.environ["FINKERNEL_DB_USER"]
-password = os.environ["FINKERNEL_DB_PASSWORD"]
-bootstrap_db = os.environ["FINKERNEL_DB_BOOTSTRAP"]
-
-admin_dsn = f"host={host} port={port} dbname={bootstrap_db} user={user} password={password}"
-target_dsn = f"host={host} port={port} dbname={dbname} user={user} password={password}"
-
-with psycopg.connect(admin_dsn, autocommit=True) as conn:
-    with conn.cursor() as cur:
-        cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (dbname,))
-        exists = cur.fetchone() is not None
-        if not exists:
-            cur.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(dbname)))
-
-with psycopg.connect(target_dsn, autocommit=True) as conn:
-    with conn.cursor() as cur:
-        cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
-
-print("PostgreSQL database and vector extension are ready.")
-'@ | & $PythonPath -
+    return @{
+        APP_NAME = (Prompt-Value -Message "APP_NAME" -Default $CurrentValues.APP_NAME)
+        ENVIRONMENT = (Prompt-Value -Message "ENVIRONMENT" -Default $CurrentValues.ENVIRONMENT)
+        API_PREFIX = (Prompt-Value -Message "API_PREFIX" -Default $CurrentValues.API_PREFIX)
+        APP_PORT = (Prompt-Value -Message "Host port for FinKernel HTTP and MCP" -Default $CurrentValues.APP_PORT)
+        POSTGRES_DB = (Prompt-Value -Message "Docker PostgreSQL database name" -Default $CurrentValues.POSTGRES_DB)
+        POSTGRES_USER = (Prompt-Value -Message "Docker PostgreSQL user" -Default $CurrentValues.POSTGRES_USER)
+        POSTGRES_PASSWORD = (Prompt-Value -Message "Docker PostgreSQL password" -Default $CurrentValues.POSTGRES_PASSWORD -Secret)
+        ENABLE_PGVECTOR = "true"
+        PROFILE_STORE_PATH = (Prompt-Value -Message "PROFILE_STORE_PATH" -Default $CurrentValues.PROFILE_STORE_PATH)
+    }
 }
 
-function Write-McpConfigs {
+function Get-DockerComposeCommand {
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+        throw "Docker CLI was not found. Install Docker Desktop (or Docker Engine with docker compose) and rerun scripts\\bootstrap-local.ps1."
+    }
+
+    try {
+        & docker version | Out-Null
+    }
+    catch {
+        throw "Docker is installed but not reachable. Start Docker and rerun scripts\\bootstrap-local.ps1."
+    }
+
+    try {
+        & docker compose version | Out-Null
+        return @("docker", "compose")
+    }
+    catch {
+        if (Get-Command docker-compose -ErrorAction SilentlyContinue) {
+            return @("docker-compose")
+        }
+        throw "Docker compose was not found. Install a Docker version that includes docker compose and rerun scripts\\bootstrap-local.ps1."
+    }
+}
+
+function Invoke-DockerCompose {
+    param(
+        [string[]]$ComposeCommand,
+        [string[]]$Args,
+        [string]$RepoRoot
+    )
+
+    Push-Location $RepoRoot
+    try {
+        if ($ComposeCommand.Count -eq 1) {
+            & $ComposeCommand[0] @Args
+        }
+        else {
+            & $ComposeCommand[0] $ComposeCommand[1] @Args
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "Docker compose command failed."
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+function Wait-ForHttpHealth {
+    param(
+        [string]$Url,
+        [int]$TimeoutSeconds = 180
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $response = Invoke-WebRequest -Uri $Url -Method Get -UseBasicParsing -TimeoutSec 5
+            if ($response.StatusCode -eq 200) {
+                return
+            }
+        }
+        catch {
+        }
+        Start-Sleep -Seconds 2
+    }
+
+    throw "FinKernel did not become healthy at $Url within $TimeoutSeconds seconds."
+}
+
+function Write-McpHttpConfig {
     param(
         [string]$RepoRoot,
-        [string]$PythonPath
+        [string]$McpUrl
     )
 
     $configDir = Join-Path $RepoRoot "config"
     Ensure-Directory -Path $configDir
 
     $httpConfigPath = Join-Path $configDir "host-agent-mcp-http.local.json"
-    $stdioConfigPath = Join-Path $configDir "host-agent-mcp-stdio.local.json"
 
     $httpConfig = @{
         mcpServers = @{
             finkernel = @{
                 type = "streamable-http"
-                url = "http://localhost:8000/api/mcp/"
-            }
-        }
-    }
-
-    $stdioConfig = @{
-        mcpServers = @{
-            finkernel = @{
-                command = $PythonPath
-                args = @(
-                    "-m",
-                    "finkernel.transport.mcp.stdio_runner"
-                )
-                cwd = $RepoRoot
+                url = $McpUrl
             }
         }
     }
 
     $httpConfig | ConvertTo-Json -Depth 8 | Set-Content -Path $httpConfigPath -Encoding UTF8
-    $stdioConfig | ConvertTo-Json -Depth 8 | Set-Content -Path $stdioConfigPath -Encoding UTF8
-
-    return @{
-        Http = $httpConfigPath
-        Stdio = $stdioConfigPath
-    }
+    return $httpConfigPath
 }
 
 function Write-AgentBundle {
     param(
         [string]$RepoRoot,
         [string]$TargetDirectory,
-        [string]$HttpConfigPath,
-        [string]$StdioConfigPath
+        [string]$HttpConfigPath
     )
 
     $bundleRoot = Join-Path $TargetDirectory "finkernel-agent"
@@ -229,7 +271,6 @@ function Write-AgentBundle {
     Ensure-Directory -Path $bundlePromptDir
 
     Copy-Item $HttpConfigPath (Join-Path $bundleRoot "host-agent-mcp-http.json") -Force
-    Copy-Item $StdioConfigPath (Join-Path $bundleRoot "host-agent-mcp-stdio.json") -Force
     Copy-Item (Join-Path $RepoRoot "SKILL.md") (Join-Path $bundleRoot "SKILL.md") -Force
     Copy-Item (Join-Path $RepoRoot "prompts\\*.md") $bundlePromptDir -Force
 
@@ -237,7 +278,6 @@ function Write-AgentBundle {
 FinKernel agent bundle
 
 - host-agent-mcp-http.json: HTTP MCP registration
-- host-agent-mcp-stdio.json: local stdio MCP registration
 - SKILL.md: top-level host skill
 - prompts\\: full FinKernel routing + persona prompt pack
 "@
@@ -293,7 +333,7 @@ function Get-AgentBundlePromptMessage {
             return "Target parent directory for Hermes skill installation"
         }
         "Custom MCP client" {
-            return "Target directory for exported MCP configs and skill bundle"
+            return "Target directory for exported MCP HTTP config and skill bundle"
         }
         default {
             return "Target directory for injected prompts/skill/config bundle"
@@ -427,89 +467,21 @@ function Register-AgentMcp {
     }
 }
 
-function Start-FinKernelApp {
-    param(
-        [string]$RepoRoot
-    )
-
-    $runScript = Join-Path $RepoRoot "scripts\\run-local.ps1"
-    Start-Process powershell -WorkingDirectory $RepoRoot -ArgumentList @(
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        $runScript
-    ) | Out-Null
-}
-
 $repoRoot = Resolve-RepoRoot
 Set-Location $repoRoot
 
-$venvDir = Join-Path $repoRoot ".venv"
-$venvPython = Join-Path $venvDir "Scripts\\python.exe"
-if (-not (Test-Path $venvPython)) {
-    New-LocalVenv -TargetPath $venvDir
-}
-
-if (-not $SkipInstall) {
-    & $venvPython -m pip install --upgrade pip
-    & $venvPython -m pip install -e ".[dev]"
-}
-
 $envPath = Join-Path $repoRoot ".env"
-$writeEnv = $true
+$envValues = Read-DotEnv -Path $envPath
+$writeEnv = -not (Test-Path $envPath)
+
 if (Test-Path $envPath) {
     $envChoice = Prompt-Choice -Message "An existing .env file was found. What should the installer do?" -Options @("Keep existing .env", "Rewrite .env interactively") -DefaultIndex 0
     $writeEnv = $envChoice -eq "Rewrite .env interactively"
 }
 
-$appName = "FinKernel"
-$environment = "development"
-$apiPrefix = "/api"
-$databaseHost = "localhost"
-$databasePort = "5432"
-$databaseName = "finkernel"
-$databaseUser = "finkernel"
-$databasePassword = "change-me"
-$bootstrapDatabase = "postgres"
-$profileStorePath = "config/persona-profiles.json"
-
 if ($writeEnv) {
-    Write-Host ""
-    Write-Host "FinKernel local setup targets PostgreSQL with the vector extension." -ForegroundColor Cyan
-    $appName = Prompt-Value -Message "APP_NAME" -Default $appName
-    $environment = Prompt-Value -Message "ENVIRONMENT" -Default $environment
-    $apiPrefix = Prompt-Value -Message "API_PREFIX" -Default $apiPrefix
-    $databaseHost = Prompt-Value -Message "PostgreSQL host" -Default $databaseHost
-    $databasePort = Prompt-Value -Message "PostgreSQL port" -Default $databasePort
-    $databaseName = Prompt-Value -Message "FinKernel database name" -Default $databaseName
-    $databaseUser = Prompt-Value -Message "PostgreSQL user" -Default $databaseUser
-    $databasePassword = Prompt-Value -Message "PostgreSQL password" -Default $databasePassword -Secret
-    $bootstrapDatabase = Prompt-Value -Message "Bootstrap database to connect to before creating $databaseName" -Default $bootstrapDatabase
-    $profileStorePath = Prompt-Value -Message "PROFILE_STORE_PATH" -Default $profileStorePath
-
-    $databaseUrl = Build-DatabaseUrl `
-        -DatabaseHost $databaseHost `
-        -DatabasePort $databasePort `
-        -DatabaseName $databaseName `
-        -DatabaseUser $databaseUser `
-        -DatabasePassword $databasePassword
-
-    Write-DotEnv `
-        -Path $envPath `
-        -AppName $appName `
-        -Environment $environment `
-        -ApiPrefix $apiPrefix `
-        -DatabaseUrl $databaseUrl `
-        -ProfileStorePath $profileStorePath
-
-    Initialize-PostgresDatabase `
-        -PythonPath $venvPython `
-        -DatabaseHost $databaseHost `
-        -DatabasePort $databasePort `
-        -DatabaseName $databaseName `
-        -DatabaseUser $databaseUser `
-        -DatabasePassword $databasePassword `
-        -BootstrapDatabase $bootstrapDatabase
+    $envValues = Prompt-DotEnvValues -CurrentValues $envValues
+    Write-DotEnv -Path $envPath -Values $envValues
 }
 
 $profileSeedPath = Join-Path $repoRoot "config\\persona-profiles.json"
@@ -517,7 +489,14 @@ if (-not (Test-Path $profileSeedPath)) {
     Copy-Item (Join-Path $repoRoot "config\\persona-profiles.example.json") $profileSeedPath
 }
 
-$configPaths = Write-McpConfigs -RepoRoot $repoRoot -PythonPath $venvPython
+$composeCommand = Get-DockerComposeCommand
+Invoke-DockerCompose -ComposeCommand $composeCommand -Args @("up", "-d", "--build", "--remove-orphans") -RepoRoot $repoRoot
+
+$appPort = $envValues.APP_PORT
+$mcpUrl = "http://localhost:$appPort/api/mcp/"
+Wait-ForHttpHealth -Url "http://localhost:$appPort/api/health" -TimeoutSeconds 180
+
+$httpConfigPath = Write-McpHttpConfig -RepoRoot $repoRoot -McpUrl $mcpUrl
 
 $agentChoice = Prompt-Choice -Message "Which host agent should FinKernel integrate with?" -Options @("Codex", "Claude Code", "OpenClaw", "Hermes", "Custom MCP client", "Skip agent integration") -DefaultIndex 0
 $bundleRoot = $null
@@ -531,17 +510,11 @@ if ($agentChoice -ne "Skip agent integration") {
     $bundleRoot = Write-AgentBundle `
         -RepoRoot $repoRoot `
         -TargetDirectory $bundleDir `
-        -HttpConfigPath $configPaths.Http `
-        -StdioConfigPath $configPaths.Stdio
+        -HttpConfigPath $httpConfigPath
 
     if (-not $SkipAgentRegistration) {
-        $registrationResult = Register-AgentMcp -AgentChoice $agentChoice -McpUrl "http://localhost:8000/api/mcp/"
+        $registrationResult = Register-AgentMcp -AgentChoice $agentChoice -McpUrl $mcpUrl
     }
-}
-
-$startNow = Prompt-Choice -Message "Start FinKernel now so the MCP endpoint is immediately available?" -Options @("Yes", "No") -DefaultIndex 0
-if ($startNow -eq "Yes") {
-    Start-FinKernelApp -RepoRoot $repoRoot
 }
 
 Write-Host ""
@@ -551,9 +524,12 @@ Write-Host "Environment:"
 Write-Host "  .env -> $envPath"
 Write-Host "  profile seed -> $profileSeedPath"
 Write-Host ""
-Write-Host "MCP configs:"
-Write-Host "  HTTP  -> $($configPaths.Http)"
-Write-Host "  stdio -> $($configPaths.Stdio)"
+Write-Host "Docker services:"
+Write-Host "  FinKernel health -> http://localhost:$appPort/api/health"
+Write-Host "  FinKernel MCP    -> $mcpUrl"
+Write-Host ""
+Write-Host "MCP config:"
+Write-Host "  HTTP -> $httpConfigPath"
 Write-Host ""
 if ($bundleRoot) {
     Write-Host "Injected agent bundle:"
@@ -565,5 +541,5 @@ if ($registrationResult -and $registrationResult.Registered) {
     Write-Host "  $($registrationResult.SuccessMessage)"
     Write-Host ""
 }
-Write-Host "Run FinKernel locally with:"
+Write-Host "Restart the Docker stack later with:"
 Write-Host "  powershell -ExecutionPolicy Bypass -File .\\scripts\\run-local.ps1"

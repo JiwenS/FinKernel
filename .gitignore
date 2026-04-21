@@ -8,7 +8,6 @@ __pycache__/
 .venv/
 venv/
 .omx/
-.docs/
 
 # Packaging / test / tooling
 .pytest_cache/
@@ -30,6 +29,10 @@ tests/
 .env
 .env.*
 !.env.example
+config/host-agent-mcp-http.local.json
+config/host-agent-mcp-stdio.local.json
+config/persona-profiles.json
+rules/
 
 # IDE / OS
 .vscode/
