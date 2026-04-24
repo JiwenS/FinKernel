@@ -46,7 +46,7 @@ function Confirm-Uninstall {
         return
     }
 
-    $choice = Prompt-Choice -Message "This will remove the FinKernel Docker stack, generated local files, and agent-side FinKernel bundles. Continue?" -Options @("No", "Yes") -DefaultIndex 0
+    $choice = Prompt-Choice -Message "This will remove the FinKernel Docker stack, generated local files, and host-side FinKernel profile bundles. Continue?" -Options @("No", "Yes") -DefaultIndex 0
     if ($choice -ne "Yes") {
         throw "Uninstall cancelled."
     }
@@ -155,7 +155,7 @@ function Remove-FinkernelBundleDirectory {
     }
 
     $leaf = Split-Path -Leaf $fullPath
-    if ($leaf -ne "finkernel-agent") {
+    if ($leaf -notin @("finkernel-profile", "finkernel-agent")) {
         Write-Host "Skipping unexpected bundle path: $fullPath" -ForegroundColor Yellow
         return $false
     }
@@ -173,6 +173,11 @@ function Get-KnownBundleRoots {
     $paths = [System.Collections.Generic.List[string]]::new()
     foreach ($candidate in @(
         $InstallState.bundle_root,
+        (Join-Path $HOME ".codex\\skills\\finkernel-profile"),
+        (Join-Path $HOME ".claude\\skills\\finkernel-profile"),
+        (Join-Path $HOME ".openclaw\\skills\\finkernel-profile"),
+        (Join-Path $HOME ".hermes\\skills\\finkernel-profile"),
+        (Join-Path $RepoRoot "integration\\custom-mcp-client\\finkernel-profile"),
         (Join-Path $HOME ".codex\\skills\\finkernel-agent"),
         (Join-Path $HOME ".claude\\skills\\finkernel-agent"),
         (Join-Path $HOME ".openclaw\\skills\\finkernel-agent"),

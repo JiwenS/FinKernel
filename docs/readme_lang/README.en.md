@@ -94,7 +94,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-local.ps1
 That bootstrap flow is designed to feel like a guided installer, not a raw script. It will:
 
 - guide `.env` setup one field at a time
-- ensure `config/persona-profiles.json` exists from the example seed
+- ensure `config/persona-profiles.json` exists as a blank local profile store
 - start Docker services for FinKernel and PostgreSQL with pgvector
 - wait for the HTTP app and MCP endpoint to become usable
 - create a local HTTP MCP config
@@ -127,7 +127,7 @@ If you changed `APP_PORT` in `.env`, use that port instead of `8000`.
 
 ### Uninstall
 
-To remove the FinKernel Docker stack, generated local files, and installed FinKernel agent bundles:
+To remove the FinKernel Docker stack, generated local files, and installed FinKernel profile skill bundles:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-local.ps1
@@ -157,7 +157,7 @@ For deeper setup details, see:
 
 | Asset | Purpose |
 | --- | --- |
-| `../../SKILL.md` | Top-level host-agent skill for routing profile-aware conversations into FinKernel |
+| `../../SKILL.md` | Primary host-visible profile skill for building and maintaining the FinKernel profile |
 | `../../prompts/persona_assessment.md` | Prompt template keyed off `assess_persona` status values |
 | `../../prompts/finkernel_system_routing.md` | System routing policy so the host reads profile context before generic finance advice |
 
@@ -165,10 +165,10 @@ For deeper setup details, see:
 
 | Agent | Fast-path setup |
 | --- | --- |
-| `Codex` | Install FinKernel into `~/.codex/skills/finkernel-agent` and try `codex mcp add` |
-| `Claude Code` | Install FinKernel into `~/.claude/skills/finkernel-agent` and try `claude mcp add --transport http --scope local` |
-| `OpenClaw` | Install FinKernel into `~/.openclaw/skills/finkernel-agent` and try `openclaw mcp set` with `streamable-http` |
-| `Hermes` | Install FinKernel into `~/.hermes/skills/finkernel-agent` and try `hermes config set mcp_servers.finkernel.url` |
+| `Codex` | Install FinKernel into `~/.codex/skills/finkernel-profile` and try `codex mcp add` |
+| `Claude Code` | Install FinKernel into `~/.claude/skills/finkernel-profile` and try `claude mcp add --transport http --scope local` |
+| `OpenClaw` | Install FinKernel into `~/.openclaw/skills/finkernel-profile` and try `openclaw mcp set` with `streamable-http` |
+| `Hermes` | Install FinKernel into `~/.hermes/skills/finkernel-profile` and try `hermes config set mcp_servers.finkernel.url` |
 | `Custom MCP client` | Use the exported `host-agent-mcp-http.json` bundle file manually |
 
 ### Core MCP tools

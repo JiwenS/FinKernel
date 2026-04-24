@@ -2,14 +2,30 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 import json
 from pathlib import Path
+import re
 from typing import Iterator
 
 from sqlalchemy.orm import Session, sessionmaker
 
 from finkernel.config import Settings
-from finkernel.schemas.profile import DistilledProfileMemoryResponse, MemoryKind, PersonaProfile, ProfileLifecycleStatus, ProfileOnboardingStatus
+from finkernel.schemas.profile import (
+    AccountBackground,
+    AccountEntityType,
+    DistilledProfileMemoryResponse,
+    ExecutionMode,
+    FinancialObjectives,
+    InvestmentConstraints,
+    LiquidityFrequency,
+    MemoryKind,
+    PersonaProfile,
+    PersonaTraits,
+    ProfileLifecycleStatus,
+    ProfileOnboardingStatus,
+    RiskBoundaries,
+)
 from finkernel.storage.models import ProfileContextualRuleModel, ProfileLongMemoryModel, ProfileShortMemoryModel, ProfileVersionModel
 from finkernel.storage.repositories import (
     ProfileContextualRuleRepository,
@@ -302,16 +318,25 @@ class ProfileStore:
             created_from=profile.created_from,
             supersedes_profile_version=profile.supersedes_profile_version,
             risk_budget=profile.risk_budget.value,
-            forbidden_symbols=profile.forbidden_symbols,
-            objective_text=profile.hard_rules.get("financial_objectives", {}).get("objective"),
-            horizon_text=profile.hard_rules.get("financial_objectives", {}).get("time_horizon"),
-            liquidity_text=profile.hard_rules.get("financial_objectives", {}).get("liquidity_needs"),
-            stress_response_text=profile.hard_rules.get("risk_guardrails", {}).get("stress_response"),
-            loss_threshold_text=profile.hard_rules.get("risk_guardrails", {}).get("max_drawdown_signal"),
-            constraints_text=profile.hard_rules.get("investment_constraints", {}).get("constraints"),
-            concentration_text=profile.hard_rules.get("investment_constraints", {}).get("concentration"),
-            interaction_style_text=profile.hard_rules.get("interaction_model", {}).get("interaction_style"),
-            review_cadence_text=profile.hard_rules.get("interaction_model", {}).get("review_cadence"),
+            forbidden_symbols=profile.investment_constraints.blocked_tickers,
+            target_annual_return_pct=self._decimal_to_storage(profile.financial_objectives.target_annual_return_pct),
+            investment_horizon_years=profile.financial_objectives.investment_horizon_years,
+            annual_liquidity_need=self._decimal_to_storage(profile.financial_objectives.annual_liquidity_need),
+            liquidity_frequency=profile.financial_objectives.liquidity_frequency.value if profile.financial_objectives.liquidity_frequency else None,
+            max_drawdown_limit_pct=self._decimal_to_storage(profile.risk_boundaries.max_drawdown_limit_pct),
+            max_annual_volatility_pct=self._decimal_to_storage(profile.risk_boundaries.max_annual_volatility_pct),
+            max_leverage_ratio=self._decimal_to_storage(profile.risk_boundaries.max_leverage_ratio),
+            single_asset_cap_pct=self._decimal_to_storage(profile.risk_boundaries.single_asset_cap_pct),
+            blocked_sectors=profile.investment_constraints.blocked_sectors,
+            blocked_tickers=profile.investment_constraints.blocked_tickers,
+            base_currency=profile.investment_constraints.base_currency,
+            tax_residency=profile.investment_constraints.tax_residency,
+            account_entity_type=profile.account_background.account_entity_type.value if profile.account_background.account_entity_type else None,
+            aum_allocated=self._decimal_to_storage(profile.account_background.aum_allocated),
+            execution_mode=profile.account_background.execution_mode.value if profile.account_background.execution_mode else None,
+            financial_literacy_text=profile.persona_traits.financial_literacy,
+            wealth_origin_dna_text=profile.persona_traits.wealth_origin_dna,
+            behavioral_risk_profile_text=profile.persona_traits.behavioral_risk_profile,
             payload={
                 "persona_evidence": profile.persona_evidence,
                 "persona_markdown": profile.persona_markdown,
@@ -344,6 +369,7 @@ class ProfileStore:
             for item in self.short_memory_repository.list_for_profile_version(session, model.profile_id, model.version)
         ]
         short_term_memories = self._active_or_all_short_memories(short_term_memories, include_expired=False)
+        legacy_hard_rules = payload.get("hard_rules", {})
         return PersonaProfile(
             profile_id=model.profile_id,
             owner_id=model.owner_id,
@@ -355,27 +381,34 @@ class ProfileStore:
             created_from=model.created_from or payload.get("created_from"),
             supersedes_profile_version=model.supersedes_profile_version or payload.get("supersedes_profile_version"),
             risk_budget=model.risk_budget or payload.get("risk_budget") or "medium",
-            forbidden_symbols=model.forbidden_symbols or payload.get("forbidden_symbols") or [],
-            hard_rules={
-                "financial_objectives": {
-                    "objective": model.objective_text or payload.get("hard_rules", {}).get("financial_objectives", {}).get("objective"),
-                    "time_horizon": model.horizon_text or payload.get("hard_rules", {}).get("financial_objectives", {}).get("time_horizon"),
-                    "liquidity_needs": model.liquidity_text or payload.get("hard_rules", {}).get("financial_objectives", {}).get("liquidity_needs"),
-                },
-                "risk_guardrails": {
-                    "risk_budget": model.risk_budget or payload.get("hard_rules", {}).get("risk_guardrails", {}).get("risk_budget"),
-                    "stress_response": model.stress_response_text or payload.get("hard_rules", {}).get("risk_guardrails", {}).get("stress_response"),
-                    "max_drawdown_signal": model.loss_threshold_text or payload.get("hard_rules", {}).get("risk_guardrails", {}).get("max_drawdown_signal"),
-                },
-                "investment_constraints": {
-                    "constraints": model.constraints_text or payload.get("hard_rules", {}).get("investment_constraints", {}).get("constraints"),
-                    "concentration": model.concentration_text or payload.get("hard_rules", {}).get("investment_constraints", {}).get("concentration"),
-                },
-                "interaction_model": {
-                    "interaction_style": model.interaction_style_text or payload.get("hard_rules", {}).get("interaction_model", {}).get("interaction_style"),
-                    "review_cadence": model.review_cadence_text or payload.get("hard_rules", {}).get("interaction_model", {}).get("review_cadence"),
-                },
-            },
+            financial_objectives=FinancialObjectives(
+                target_annual_return_pct=self._storage_to_decimal(model.target_annual_return_pct),
+                investment_horizon_years=model.investment_horizon_years or self._coerce_int(legacy_hard_rules.get("financial_objectives", {}).get("time_horizon")),
+                annual_liquidity_need=self._storage_to_decimal(model.annual_liquidity_need),
+                liquidity_frequency=self._coerce_liquidity_frequency(model.liquidity_frequency),
+            ),
+            risk_boundaries=RiskBoundaries(
+                max_drawdown_limit_pct=self._storage_to_decimal(model.max_drawdown_limit_pct),
+                max_annual_volatility_pct=self._storage_to_decimal(model.max_annual_volatility_pct),
+                max_leverage_ratio=self._storage_to_decimal(model.max_leverage_ratio),
+                single_asset_cap_pct=self._storage_to_decimal(model.single_asset_cap_pct),
+            ),
+            investment_constraints=InvestmentConstraints(
+                blocked_sectors=model.blocked_sectors or [],
+                blocked_tickers=model.blocked_tickers or model.forbidden_symbols or payload.get("forbidden_symbols") or [],
+                base_currency=model.base_currency,
+                tax_residency=model.tax_residency,
+            ),
+            account_background=AccountBackground(
+                account_entity_type=AccountEntityType(model.account_entity_type) if model.account_entity_type else None,
+                aum_allocated=self._storage_to_decimal(model.aum_allocated),
+                execution_mode=ExecutionMode(model.execution_mode) if model.execution_mode else None,
+            ),
+            persona_traits=PersonaTraits(
+                financial_literacy=model.financial_literacy_text,
+                wealth_origin_dna=model.wealth_origin_dna_text,
+                behavioral_risk_profile=model.behavioral_risk_profile_text or model.stress_response_text,
+            ),
             contextual_rules=contextual_rules,
             long_term_memories=long_term_memories,
             short_term_memories=short_term_memories,
@@ -456,3 +489,37 @@ class ProfileStore:
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=UTC)
         return parsed
+
+    def _decimal_to_storage(self, value: Decimal | None):
+        if value is None:
+            return None
+        return float(value)
+
+    def _storage_to_decimal(self, value) -> Decimal | None:
+        if value in (None, ""):
+            return None
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError):
+            return None
+
+    def _coerce_int(self, value) -> int | None:
+        if value in (None, ""):
+            return None
+        match = None
+        if isinstance(value, str):
+            match = re.search(r"(\d+)", value)
+        if match is not None:
+            return int(match.group(1))
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _coerce_liquidity_frequency(self, value: str | None) -> LiquidityFrequency | None:
+        if not value:
+            return None
+        try:
+            return LiquidityFrequency(value)
+        except ValueError:
+            return None

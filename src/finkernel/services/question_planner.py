@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable
+from typing import Any, Iterable
 from uuid import uuid4
 
 from finkernel.schemas.discovery import (
@@ -19,98 +19,248 @@ from finkernel.schemas.discovery import (
 
 
 DIMENSION_TO_PILLAR: dict[DiscoveryDimension, DiscoveryPillar] = {
-    DiscoveryDimension.OBJECTIVE: DiscoveryPillar.FINANCIAL_OBJECTIVES,
-    DiscoveryDimension.LIQUIDITY: DiscoveryPillar.FINANCIAL_OBJECTIVES,
-    DiscoveryDimension.HORIZON: DiscoveryPillar.FINANCIAL_OBJECTIVES,
-    DiscoveryDimension.RISK_RESPONSE: DiscoveryPillar.RISK,
-    DiscoveryDimension.LOSS_THRESHOLD: DiscoveryPillar.RISK,
-    DiscoveryDimension.CONSTRAINTS: DiscoveryPillar.CONSTRAINTS,
-    DiscoveryDimension.CONCENTRATION: DiscoveryPillar.CONSTRAINTS,
-    DiscoveryDimension.BACKGROUND: DiscoveryPillar.BACKGROUND,
-    DiscoveryDimension.INTERACTION_STYLE: DiscoveryPillar.BACKGROUND,
-    DiscoveryDimension.REVIEW_CADENCE: DiscoveryPillar.BACKGROUND,
+    DiscoveryDimension.TARGET_ANNUAL_RETURN: DiscoveryPillar.FINANCIAL_OBJECTIVES,
+    DiscoveryDimension.INVESTMENT_HORIZON: DiscoveryPillar.FINANCIAL_OBJECTIVES,
+    DiscoveryDimension.ANNUAL_LIQUIDITY_NEED: DiscoveryPillar.FINANCIAL_OBJECTIVES,
+    DiscoveryDimension.LIQUIDITY_FREQUENCY: DiscoveryPillar.FINANCIAL_OBJECTIVES,
+    DiscoveryDimension.MAX_DRAWDOWN_LIMIT: DiscoveryPillar.RISK,
+    DiscoveryDimension.MAX_ANNUAL_VOLATILITY: DiscoveryPillar.RISK,
+    DiscoveryDimension.MAX_LEVERAGE_RATIO: DiscoveryPillar.RISK,
+    DiscoveryDimension.SINGLE_ASSET_CAP: DiscoveryPillar.RISK,
+    DiscoveryDimension.BLOCKED_SECTORS: DiscoveryPillar.CONSTRAINTS,
+    DiscoveryDimension.BLOCKED_TICKERS: DiscoveryPillar.CONSTRAINTS,
+    DiscoveryDimension.BASE_CURRENCY: DiscoveryPillar.CONSTRAINTS,
+    DiscoveryDimension.TAX_RESIDENCY: DiscoveryPillar.CONSTRAINTS,
+    DiscoveryDimension.ACCOUNT_ENTITY_TYPE: DiscoveryPillar.BACKGROUND,
+    DiscoveryDimension.AUM_ALLOCATED: DiscoveryPillar.BACKGROUND,
+    DiscoveryDimension.EXECUTION_MODE: DiscoveryPillar.BACKGROUND,
+    DiscoveryDimension.FINANCIAL_LITERACY: DiscoveryPillar.BACKGROUND,
+    DiscoveryDimension.WEALTH_ORIGIN_DNA: DiscoveryPillar.BACKGROUND,
+    DiscoveryDimension.BEHAVIORAL_RISK_PROFILE: DiscoveryPillar.BACKGROUND,
+}
+
+PILLAR_DIMENSIONS: dict[DiscoveryPillar, list[DiscoveryDimension]] = {
+    DiscoveryPillar.FINANCIAL_OBJECTIVES: [
+        DiscoveryDimension.TARGET_ANNUAL_RETURN,
+        DiscoveryDimension.INVESTMENT_HORIZON,
+        DiscoveryDimension.ANNUAL_LIQUIDITY_NEED,
+        DiscoveryDimension.LIQUIDITY_FREQUENCY,
+    ],
+    DiscoveryPillar.RISK: [
+        DiscoveryDimension.MAX_DRAWDOWN_LIMIT,
+        DiscoveryDimension.MAX_ANNUAL_VOLATILITY,
+        DiscoveryDimension.MAX_LEVERAGE_RATIO,
+        DiscoveryDimension.SINGLE_ASSET_CAP,
+    ],
+    DiscoveryPillar.CONSTRAINTS: [
+        DiscoveryDimension.BLOCKED_SECTORS,
+        DiscoveryDimension.BLOCKED_TICKERS,
+        DiscoveryDimension.BASE_CURRENCY,
+        DiscoveryDimension.TAX_RESIDENCY,
+    ],
+    DiscoveryPillar.BACKGROUND: [
+        DiscoveryDimension.ACCOUNT_ENTITY_TYPE,
+        DiscoveryDimension.AUM_ALLOCATED,
+        DiscoveryDimension.EXECUTION_MODE,
+        DiscoveryDimension.FINANCIAL_LITERACY,
+        DiscoveryDimension.WEALTH_ORIGIN_DNA,
+        DiscoveryDimension.BEHAVIORAL_RISK_PROFILE,
+    ],
 }
 
 MANDATORY_DIMENSIONS: list[DiscoveryDimension] = [
-    DiscoveryDimension.OBJECTIVE,
-    DiscoveryDimension.LIQUIDITY,
-    DiscoveryDimension.HORIZON,
-    DiscoveryDimension.RISK_RESPONSE,
-    DiscoveryDimension.LOSS_THRESHOLD,
-    DiscoveryDimension.CONSTRAINTS,
-    DiscoveryDimension.CONCENTRATION,
-    DiscoveryDimension.INTERACTION_STYLE,
-    DiscoveryDimension.REVIEW_CADENCE,
+    dimension for pillar in DiscoveryPillar for dimension in PILLAR_DIMENSIONS[pillar]
 ]
 
-HIGH_RISK_DIMENSIONS = {
-    DiscoveryDimension.LIQUIDITY,
-    DiscoveryDimension.RISK_RESPONSE,
-    DiscoveryDimension.LOSS_THRESHOLD,
+NUMERIC_DIMENSIONS = {
+    DiscoveryDimension.TARGET_ANNUAL_RETURN,
+    DiscoveryDimension.INVESTMENT_HORIZON,
+    DiscoveryDimension.ANNUAL_LIQUIDITY_NEED,
+    DiscoveryDimension.MAX_DRAWDOWN_LIMIT,
+    DiscoveryDimension.MAX_ANNUAL_VOLATILITY,
+    DiscoveryDimension.MAX_LEVERAGE_RATIO,
+    DiscoveryDimension.SINGLE_ASSET_CAP,
+    DiscoveryDimension.AUM_ALLOCATED,
+}
+
+ENUM_DIMENSIONS = {
+    DiscoveryDimension.LIQUIDITY_FREQUENCY,
+    DiscoveryDimension.ACCOUNT_ENTITY_TYPE,
+    DiscoveryDimension.EXECUTION_MODE,
+}
+
+LIST_DIMENSIONS = {
+    DiscoveryDimension.BLOCKED_SECTORS,
+    DiscoveryDimension.BLOCKED_TICKERS,
+}
+
+TRAIT_DIMENSIONS = {
+    DiscoveryDimension.FINANCIAL_LITERACY,
+    DiscoveryDimension.WEALTH_ORIGIN_DNA,
+    DiscoveryDimension.BEHAVIORAL_RISK_PROFILE,
 }
 
 STARTER_BANK: dict[DiscoveryDimension, tuple[str, str, ExpectedAnswerShape]] = {
-    DiscoveryDimension.OBJECTIVE: (
-        "What is this portfolio mainly for over the next few years: growth, capital preservation, income, or a specific future use?",
-        "I need the portfolio's core purpose before I can shape the mandate safely.",
-        ExpectedAnswerShape.OPEN_TEXT,
+    DiscoveryDimension.TARGET_ANNUAL_RETURN: (
+        "What annual return target should the system optimize toward for this capital, in percentage terms?",
+        "This sets the core objective function for the account instead of leaving return expectations implicit.",
+        ExpectedAnswerShape.NUMBER,
     ),
-    DiscoveryDimension.LIQUIDITY: (
-        "Do you expect to need a meaningful amount of cash from this portfolio within the next 12 months?",
-        "Near-term cash needs heavily affect how much risk or illiquidity is acceptable.",
-        ExpectedAnswerShape.OPEN_TEXT,
+    DiscoveryDimension.INVESTMENT_HORIZON: (
+        "How many years should this capital stay under the current mandate before its core purpose changes?",
+        "Investment horizon is a hard constraint for asset matching and portfolio time scale.",
+        ExpectedAnswerShape.NUMBER,
     ),
-    DiscoveryDimension.HORIZON: (
-        "Roughly how long should this capital be managed with this mandate before major goals change?",
-        "Time horizon changes how much short-term volatility and rebalancing pressure make sense.",
-        ExpectedAnswerShape.OPEN_TEXT,
+    DiscoveryDimension.ANNUAL_LIQUIDITY_NEED: (
+        "How much cash does this portfolio need to deliver over a typical year, in absolute money terms?",
+        "The system needs an explicit liquidity number rather than a vague sense of flexibility.",
+        ExpectedAnswerShape.MONEY_RANGE,
     ),
-    DiscoveryDimension.RISK_RESPONSE: (
-        "If this portfolio fell 15% in a short period, would you be more likely to add, hold, or reduce risk?",
-        "Your reaction under stress says more than a generic risk label.",
+    DiscoveryDimension.LIQUIDITY_FREQUENCY: (
+        "How often should that liquidity be provided: monthly, quarterly, annually, or not on a recurring schedule?",
+        "Cash-flow cadence affects income targeting, reserve sizing, and rebalancing pressure.",
         ExpectedAnswerShape.CHOICE,
     ),
-    DiscoveryDimension.LOSS_THRESHOLD: (
-        "What level of decline would start to feel unacceptable to you personally?",
-        "I need a concrete loss threshold or drawdown line to turn preference into enforceable guardrails.",
+    DiscoveryDimension.MAX_DRAWDOWN_LIMIT: (
+        "What maximum peak-to-trough drawdown percentage should be treated as the portfolio's hard risk limit?",
+        "This becomes a hard risk boundary for future de-risking or trading controls.",
+        ExpectedAnswerShape.NUMBER,
+    ),
+    DiscoveryDimension.MAX_ANNUAL_VOLATILITY: (
+        "What annualized volatility ceiling should the system stay under, in percentage terms?",
+        "Volatility is one of the cleanest mathematical risk constraints for portfolio construction.",
+        ExpectedAnswerShape.NUMBER,
+    ),
+    DiscoveryDimension.MAX_LEVERAGE_RATIO: (
+        "What is the maximum leverage ratio this account is ever allowed to use? Use 0 if leverage is forbidden.",
+        "Leverage permission must be explicit because it materially changes the system's risk envelope.",
+        ExpectedAnswerShape.NUMBER,
+    ),
+    DiscoveryDimension.SINGLE_ASSET_CAP: (
+        "What is the maximum percentage that any single asset is allowed to represent in the portfolio?",
+        "This defines the single-name concentration ceiling used by the risk engine.",
+        ExpectedAnswerShape.NUMBER,
+    ),
+    DiscoveryDimension.BLOCKED_SECTORS: (
+        "Which sectors are absolutely blocked for this account? If none, say none.",
+        "Blocked sectors belong in a filterable rule set, not in narrative prose alone.",
+        ExpectedAnswerShape.LIST,
+    ),
+    DiscoveryDimension.BLOCKED_TICKERS: (
+        "Which specific tickers are absolutely blocked for this account? If none, say none.",
+        "Ticker-level exclusions need to be explicit so the execution layer can enforce them.",
+        ExpectedAnswerShape.LIST,
+    ),
+    DiscoveryDimension.BASE_CURRENCY: (
+        "What is the account's base currency for valuation and settlement?",
+        "Base currency affects valuation, reporting, and downstream optimization assumptions.",
+        ExpectedAnswerShape.CHOICE,
+    ),
+    DiscoveryDimension.TAX_RESIDENCY: (
+        "Which tax residency or tax jurisdiction should the system assume for this account?",
+        "Tax jurisdiction changes what later tax-aware logic is even allowed to consider.",
         ExpectedAnswerShape.OPEN_TEXT,
     ),
-    DiscoveryDimension.CONSTRAINTS: (
-        "Are there any industries, companies, instruments, or markets you explicitly do not want exposure to?",
-        "Hard restrictions and exclusions need to be captured explicitly so the system can enforce them.",
+    DiscoveryDimension.ACCOUNT_ENTITY_TYPE: (
+        "Is this account owned by an individual, a trust, or a corporate entity?",
+        "Entity type affects compliance checks and what the system should assume about account structure.",
+        ExpectedAnswerShape.CHOICE,
+    ),
+    DiscoveryDimension.AUM_ALLOCATED: (
+        "How much capital, in absolute terms, is allocated to this FinKernel-managed mandate?",
+        "The system needs the actual capital base to size risk and future execution boundaries correctly.",
+        ExpectedAnswerShape.MONEY_RANGE,
+    ),
+    DiscoveryDimension.EXECUTION_MODE: (
+        "Should the agent operate in advisory mode with human confirmation, or discretionary mode with delegated execution authority?",
+        "Execution mode is a hard permission boundary for future trading automation.",
+        ExpectedAnswerShape.CHOICE,
+    ),
+    DiscoveryDimension.FINANCIAL_LITERACY: (
+        "How would you describe the user's financial literacy and product understanding in practical terms?",
+        "This determines how detailed or simplified the agent's communication and explanations should be.",
         ExpectedAnswerShape.OPEN_TEXT,
     ),
-    DiscoveryDimension.CONCENTRATION: (
-        "Would you want limits on how concentrated any single position or theme can become?",
-        "Concentration limits are one of the most important portfolio guardrails.",
+    DiscoveryDimension.WEALTH_ORIGIN_DNA: (
+        "What about the user's wealth origin or capital story should shape how the system interprets risk and opportunity?",
+        "Wealth origin often changes what kinds of assets feel trustworthy or unacceptable to the user.",
         ExpectedAnswerShape.OPEN_TEXT,
     ),
-    DiscoveryDimension.BACKGROUND: (
-        "Is there any background about how this capital was earned or what it is meant to support that should shape how cautiously it is managed?",
-        "Context like job exposure, family obligations, or prior losses often changes the right risk framing.",
-        ExpectedAnswerShape.OPEN_TEXT,
-    ),
-    DiscoveryDimension.INTERACTION_STYLE: (
-        "How involved do you want the system to be: mostly factual and concise, or more proactive in surfacing trade-offs and reminders?",
-        "The profile should capture how you prefer the system to communicate and intervene.",
-        ExpectedAnswerShape.OPEN_TEXT,
-    ),
-    DiscoveryDimension.REVIEW_CADENCE: (
-        "How often should we explicitly revisit your profile assumptions: only when you ask, on a schedule, or after major market moves?",
-        "Review cadence is part of the mandate, not just a UI preference.",
+    DiscoveryDimension.BEHAVIORAL_RISK_PROFILE: (
+        "What behavioral risk pattern should the system remember about how this user reacts under market stress?",
+        "Behavioral risk is a durable boundary for future autonomous monitoring and intervention.",
         ExpectedAnswerShape.OPEN_TEXT,
     ),
 }
 
-AMBIGUITY_RE = re.compile(r"\b(maybe|depends|not sure|it varies|kind of|probably|possibly)\b", re.IGNORECASE)
-NUMBER_RE = re.compile(r"(\d+(?:\.\d+)?)")
-MONEY_RE = re.compile(r"(\$?\d+(?:\.\d+)?\s*[kKmM]?)")
-RISK_AVERSION_RE = re.compile(r"\b(afraid|anxious|panic|scared|uneasy|volatile|burned|sleep)\b", re.IGNORECASE)
-RISK_SEEKING_RE = re.compile(r"\b(aggressive|upside|volatility|swings|high growth|growth)\b", re.IGNORECASE)
-LIQUIDITY_RE = re.compile(r"\b(cash|expense|buy a house|home|tuition|startup|reserve|emergency|need money)\b", re.IGNORECASE)
-VALUES_RE = re.compile(r"\b(avoid|don't invest|do not invest|unethical|hate|won't invest|ceo)\b", re.IGNORECASE)
-CONCENTRATION_RE = re.compile(r"\b(cap|limit|concentrat|too much|single position|theme)\b", re.IGNORECASE)
-REVIEW_RE = re.compile(r"\b(monthly|quarterly|schedule|market moves|check in)\b", re.IGNORECASE)
+AMBIGUITY_RE = re.compile(r"\b(maybe|depends|not sure|it varies|kind of|probably|possibly|around-ish)\b", re.IGNORECASE)
+NONE_RE = re.compile(r"\b(none|no restrictions|no blocked|nothing blocked|n/a|not applicable)\b", re.IGNORECASE)
+NUMBER_RE = re.compile(r"(-?\d+(?:\.\d+)?)")
+MONEY_RE = re.compile(r"(\$?\d+(?:\.\d+)?\s*[kKmMbB]?)")
+YEARS_RE = re.compile(r"(\d+)(?:\s*[\+\-]?\s*)?(?:year|yr)", re.IGNORECASE)
+CURRENCY_RE = re.compile(r"\b([A-Z]{3})\b")
+TICKER_RE = re.compile(r"\b[A-Z]{1,5}\b")
+
+SECTOR_MAP = {
+    "tobacco": "Tobacco",
+    "crypto": "Crypto",
+    "gambling": "Gambling",
+    "defense": "Defense",
+    "weapon": "Weapons",
+    "weapons": "Weapons",
+    "oil": "OilAndGas",
+    "gas": "OilAndGas",
+    "energy": "Energy",
+    "real estate": "RealEstate",
+    "bank": "Banking",
+    "banks": "Banking",
+}
+
+CURRENCY_KEYWORDS = {
+    "usd": "USD",
+    "dollar": "USD",
+    "dollars": "USD",
+    "hkd": "HKD",
+    "hkdollar": "HKD",
+    "cny": "CNY",
+    "rmb": "CNY",
+    "cnh": "CNH",
+    "eur": "EUR",
+    "euro": "EUR",
+    "gbp": "GBP",
+    "pound": "GBP",
+    "jpy": "JPY",
+    "yen": "JPY",
+}
+
+ACCOUNT_ENTITY_KEYWORDS = {
+    "individual": "individual",
+    "personal": "individual",
+    "trust": "trust",
+    "corporate": "corporate",
+    "company": "corporate",
+    "llc": "corporate",
+}
+
+EXECUTION_MODE_KEYWORDS = {
+    "discretionary": "discretionary",
+    "automatic": "discretionary",
+    "auto": "discretionary",
+    "advisory": "advisory",
+    "manual": "advisory",
+    "confirm": "advisory",
+}
+
+LIQUIDITY_FREQUENCY_KEYWORDS = {
+    "monthly": "monthly",
+    "month": "monthly",
+    "quarterly": "quarterly",
+    "quarter": "quarterly",
+    "annual": "annual",
+    "annually": "annual",
+    "yearly": "annual",
+    "none": "none",
+}
 
 
 def build_empty_dimension_states() -> list[DimensionState]:
@@ -122,24 +272,31 @@ class QuestionPlanner:
         states = {state.dimension: state for state in session.dimension_states}
         unmet: list[DiscoveryDimension] = []
         notes: list[str] = []
+
         for dimension in MANDATORY_DIMENSIONS:
             state = states[dimension]
-            if state.coverage_score < 2:
+            if state.coverage_score < 2 or state.confidence_score < 2:
                 unmet.append(dimension)
-            elif dimension in HIGH_RISK_DIMENSIONS and state.confidence_score < 2:
+            elif state.pending_gaps:
                 unmet.append(dimension)
-        if states[DiscoveryDimension.LOSS_THRESHOLD].depth_score < 1:
-            unmet.append(DiscoveryDimension.LOSS_THRESHOLD)
-            notes.append("A concrete or surrogate loss threshold is still missing.")
-        if states[DiscoveryDimension.CONCENTRATION].coverage_score < 2:
-            notes.append("Concentration stance is not yet explicit enough.")
-        return DraftReadinessAssessment(ready=not unmet, unmet_dimensions=list(dict.fromkeys(unmet)), notes=notes)
+                notes.extend(state.pending_gaps)
+
+        for pillar, dimensions in PILLAR_DIMENSIONS.items():
+            missing = [dimension.value for dimension in dimensions if dimension in unmet]
+            if missing:
+                notes.append(f"{pillar.value} is still missing: {', '.join(missing)}.")
+
+        return DraftReadinessAssessment(
+            ready=not unmet,
+            unmet_dimensions=list(dict.fromkeys(unmet)),
+            notes=list(dict.fromkeys(notes)),
+        )
 
     def choose_next_question(self, session: DiscoverySession) -> DiscoveryQuestion | None:
         states = {state.dimension: state for state in session.dimension_states}
-        if readiness := self.build_readiness(session):
-            if readiness.ready:
-                return None
+        readiness = self.build_readiness(session)
+        if readiness.ready:
+            return None
 
         for state in session.dimension_states:
             if state.conflict_flag:
@@ -148,22 +305,23 @@ class QuestionPlanner:
                     dimension=state.dimension,
                     question_type=DiscoveryQuestionType.CONFLICT_RESOLUTION,
                     source_type=DiscoveryQuestionSource.RULE_TRIGGER,
-                    prompt_text=f"I have two signals for {state.dimension.value} that don't fully fit together yet. Which one should take priority?",
-                    why="I need to resolve this conflict before safely generating a draft mandate.",
+                    prompt_text=f"I have two conflicting signals for {state.dimension.value}. Which boundary should the system actually enforce?",
+                    why="I need one unambiguous answer before this profile can be treated as operationally safe.",
                     answer_shape=ExpectedAnswerShape.OPEN_TEXT,
                     priority=100,
                 )
 
         drift_candidate = self._find_coverage_gap_recovery_dimension(session)
         if drift_candidate is not None:
+            starter_prompt, starter_why, answer_shape = STARTER_BANK[drift_candidate]
             return self._make_question(
                 session,
                 dimension=drift_candidate,
                 question_type=DiscoveryQuestionType.COVERAGE_RECOVERY,
                 source_type=DiscoveryQuestionSource.COVERAGE_GAP,
-                prompt_text=STARTER_BANK[drift_candidate][0],
-                why="I still need to cover this part of your profile before I can generate a usable draft.",
-                answer_shape=STARTER_BANK[drift_candidate][2],
+                prompt_text=starter_prompt,
+                why=starter_why,
+                answer_shape=answer_shape,
                 priority=90,
             )
 
@@ -181,182 +339,79 @@ class QuestionPlanner:
                     answer_shape=answer_shape,
                     priority=80,
                 )
-            if state.coverage_score < 2 or (dimension in HIGH_RISK_DIMENSIONS and state.confidence_score < 2):
+            if state.coverage_score < 2 or state.confidence_score < 2 or state.pending_gaps:
                 follow_up = self._build_follow_up(session, dimension)
                 if follow_up is not None:
                     return follow_up
 
-        for dimension in (DiscoveryDimension.BACKGROUND,):
-            state = states[dimension]
-            if state.coverage_score == 0:
-                starter_prompt, starter_why, answer_shape = STARTER_BANK[dimension]
-                return self._make_question(
-                    session,
-                    dimension=dimension,
-                    question_type=DiscoveryQuestionType.STARTER,
-                    source_type=DiscoveryQuestionSource.STARTER_BANK,
-                    prompt_text=starter_prompt,
-                    why=starter_why,
-                    answer_shape=answer_shape,
-                    priority=40,
-                )
         return None
 
     def update_dimension_state(self, session: DiscoverySession, answer: DiscoveryAnswer) -> None:
         state = self._get_state(session, answer.dimension)
         text = answer.answer_text.strip()
         lowered = text.lower()
+        normalized = self._normalize_answer(answer.dimension, text)
+
         state.last_question_id = answer.question_id
         state.last_updated_at = answer.answered_at
         state.extracted_facts.append(text)
         state.pending_gaps = []
+        state.normalized_value = normalized
 
-        ambiguous = bool(AMBIGUITY_RE.search(text))
-        has_number = bool(NUMBER_RE.search(text))
-        has_money = bool(MONEY_RE.search(text))
-        long_form = len(text.split()) >= 12
-        risk_averse = bool(RISK_AVERSION_RE.search(text))
-        risk_seeking = bool(RISK_SEEKING_RE.search(text))
+        if self._is_usable_value(answer.dimension, normalized, text):
+            state.coverage_score = 2
+            state.confidence_score = 2 if not AMBIGUITY_RE.search(text) else 1
+        else:
+            state.coverage_score = 1
+            state.confidence_score = 1
+            state.pending_gaps.append(self._gap_message(answer.dimension))
 
-        state.coverage_score = max(state.coverage_score, 1 if ambiguous and not has_number else 2)
-        state.confidence_score = max(state.confidence_score, 1 if ambiguous else 2)
-        state.depth_score = max(state.depth_score, 2 if has_number or has_money or long_form else 1)
+        if answer.dimension in NUMERIC_DIMENSIONS and normalized is not None:
+            state.depth_score = 2
+        elif answer.dimension in ENUM_DIMENSIONS and normalized is not None:
+            state.depth_score = 2
+        elif answer.dimension in LIST_DIMENSIONS and normalized is not None:
+            state.depth_score = 2
+        elif answer.dimension in TRAIT_DIMENSIONS and self._has_trait_depth(text):
+            state.depth_score = 2
+        elif len(text.split()) >= 6:
+            state.depth_score = 1
 
-        if answer.dimension in HIGH_RISK_DIMENSIONS and ambiguous:
-            state.pending_gaps.append("Needs quantification.")
-            state.confidence_score = min(state.confidence_score, 1)
-        if answer.dimension is DiscoveryDimension.CONSTRAINTS and not text:
-            state.pending_gaps.append("Need explicit hard/soft restriction stance.")
-        if answer.dimension is DiscoveryDimension.RISK_RESPONSE and risk_averse and risk_seeking:
+        if answer.dimension in TRAIT_DIMENSIONS and not self._has_trait_depth(text):
+            state.pending_gaps.append("Need a more concrete trait-level description, not just a short label.")
+
+        if answer.dimension is DiscoveryDimension.BLOCKED_TICKERS and normalized is None and not NONE_RE.search(text):
+            state.pending_gaps.append("Need explicit tickers or an explicit 'none'.")
+        if answer.dimension is DiscoveryDimension.BLOCKED_SECTORS and normalized is None and not NONE_RE.search(text):
+            state.pending_gaps.append("Need explicit sectors or an explicit 'none'.")
+        if answer.dimension is DiscoveryDimension.BASE_CURRENCY and normalized is None:
+            state.pending_gaps.append("Need a base currency such as USD, HKD, EUR, or CNY.")
+        if answer.dimension is DiscoveryDimension.TAX_RESIDENCY and len(text.split()) < 1:
+            state.pending_gaps.append("Need a tax jurisdiction.")
+
+        if answer.dimension in NUMERIC_DIMENSIONS and normalized is not None and self._numeric_conflict(answer.dimension, normalized, lowered):
             state.conflict_flag = True
-        elif answer.dimension is DiscoveryDimension.LOSS_THRESHOLD and risk_seeking and has_number:
-            threshold_value = self._extract_float(lowered)
-            state.conflict_flag = bool(threshold_value is not None and threshold_value <= 8)
         else:
             state.conflict_flag = False
 
-        if answer.dimension is DiscoveryDimension.LIQUIDITY and LIQUIDITY_RE.search(text):
-            state.depth_score = max(state.depth_score, 2)
-            if not has_number:
-                state.pending_gaps.append("Need amount or timing.")
-        if answer.dimension is DiscoveryDimension.CONSTRAINTS and VALUES_RE.search(text):
-            if "hard" not in lowered and "strict" not in lowered:
-                state.pending_gaps.append("Need to classify whether this is hard prohibition or soft preference.")
-        if answer.dimension is DiscoveryDimension.CONCENTRATION and CONCENTRATION_RE.search(text):
-            state.depth_score = max(state.depth_score, 2)
-        if answer.dimension is DiscoveryDimension.REVIEW_CADENCE and REVIEW_RE.search(text):
-            state.depth_score = max(state.depth_score, 2)
-
-        answer.extracted_signals.extend(signal for signal in self._derive_signals(text) if signal not in answer.extracted_signals)
+        answer.extracted_signals.extend(signal for signal in self._derive_signals(answer.dimension, text, normalized) if signal not in answer.extracted_signals)
 
     def _build_follow_up(self, session: DiscoverySession, dimension: DiscoveryDimension) -> DiscoveryQuestion | None:
         answers = self._answers_for_dimension(session.answers, dimension)
         latest = answers[-1] if answers else None
         if latest is None:
             return None
-        text = latest.answer_text
-        lowered = text.lower()
 
-        if dimension is DiscoveryDimension.LIQUIDITY and (LIQUIDITY_RE.search(text) or AMBIGUITY_RE.search(text)):
-            return self._make_question(
-                session,
-                dimension=dimension,
-                question_type=DiscoveryQuestionType.DEEPENING,
-                source_type=DiscoveryQuestionSource.RULE_TRIGGER,
-                prompt_text="What amount and rough timing should I assume for that cash need, and would it be a problem if markets were down when you needed it?",
-                why="I need both timing and loss sensitivity before I can set liquidity guardrails.",
-                answer_shape=ExpectedAnswerShape.OPEN_TEXT,
-                priority=70,
-                generated_from_answer_id=latest.answer_id,
-            )
-
-        if dimension is DiscoveryDimension.HORIZON and ("long term" in lowered or AMBIGUITY_RE.search(text)):
-            return self._make_question(
-                session,
-                dimension=dimension,
-                question_type=DiscoveryQuestionType.CLARIFICATION,
-                source_type=DiscoveryQuestionSource.RULE_TRIGGER,
-                prompt_text="When you say long term, should I think in terms of 3 years, 5 years, or 10+ years?",
-                why="Time horizon needs a usable range, not just a broad label.",
-                answer_shape=ExpectedAnswerShape.CHOICE,
-                priority=65,
-                generated_from_answer_id=latest.answer_id,
-            )
-
-        if dimension is DiscoveryDimension.RISK_RESPONSE and (AMBIGUITY_RE.search(text) or "depends" in lowered):
-            return self._make_question(
-                session,
-                dimension=dimension,
-                question_type=DiscoveryQuestionType.DEEPENING,
-                source_type=DiscoveryQuestionSource.RULE_TRIGGER,
-                prompt_text="What makes the difference for you in a selloff: whether the thesis changed, whether the move feels emotional, or simply how deep the drawdown is?",
-                why="I need to know how you separate temporary volatility from a real break in conviction.",
-                answer_shape=ExpectedAnswerShape.OPEN_TEXT,
-                priority=75,
-                generated_from_answer_id=latest.answer_id,
-            )
-
-        if dimension is DiscoveryDimension.LOSS_THRESHOLD and (AMBIGUITY_RE.search(text) or not NUMBER_RE.search(text)):
-            return self._make_question(
-                session,
-                dimension=dimension,
-                question_type=DiscoveryQuestionType.CLARIFICATION,
-                source_type=DiscoveryQuestionSource.RULE_TRIGGER,
-                prompt_text="Even a rough range is useful here: is your unacceptable loss line closer to 5%, 10%, 15%, or something else?",
-                why="A concrete or at least bounded loss threshold is needed for enforceable guardrails.",
-                answer_shape=ExpectedAnswerShape.CHOICE,
-                priority=75,
-                generated_from_answer_id=latest.answer_id,
-            )
-
-        if dimension is DiscoveryDimension.CONSTRAINTS and VALUES_RE.search(text):
-            return self._make_question(
-                session,
-                dimension=dimension,
-                question_type=DiscoveryQuestionType.CLARIFICATION,
-                source_type=DiscoveryQuestionSource.RULE_TRIGGER,
-                prompt_text="Should I treat that as a strict prohibition, a capped exposure, or more of a preference that can be overridden if you explicitly approve it?",
-                why="I need to know whether the restriction is enforceable or advisory.",
-                answer_shape=ExpectedAnswerShape.CHOICE,
-                priority=60,
-                generated_from_answer_id=latest.answer_id,
-            )
-
-        if dimension is DiscoveryDimension.CONCENTRATION and not NUMBER_RE.search(text):
-            return self._make_question(
-                session,
-                dimension=dimension,
-                question_type=DiscoveryQuestionType.DEEPENING,
-                source_type=DiscoveryQuestionSource.RULE_TRIGGER,
-                prompt_text="Should any single name or theme have a rough cap, even if it's just a comfort-zone range like 10%, 15%, or 20%?",
-                why="Concentration needs to become operational, not stay qualitative.",
-                answer_shape=ExpectedAnswerShape.OPEN_TEXT,
-                priority=55,
-                generated_from_answer_id=latest.answer_id,
-            )
-
-        if dimension is DiscoveryDimension.BACKGROUND and (RISK_AVERSION_RE.search(text) or long_narrative(text)):
-            return self._make_question(
-                session,
-                dimension=dimension,
-                question_type=DiscoveryQuestionType.DEEPENING,
-                source_type=DiscoveryQuestionSource.MODEL_GENERATED,
-                prompt_text="What part of that experience would you most want the system to remember and actively protect against in the future?",
-                why="That background can become valuable narrative memory and may imply future review triggers.",
-                answer_shape=ExpectedAnswerShape.OPEN_TEXT,
-                priority=45,
-                generated_from_answer_id=latest.answer_id,
-            )
-
+        prompt_text, why, answer_shape = self._follow_up_prompt(dimension, latest.answer_text)
         return self._make_question(
             session,
             dimension=dimension,
-            question_type=DiscoveryQuestionType.CLARIFICATION,
+            question_type=DiscoveryQuestionType.DEEPENING if dimension in TRAIT_DIMENSIONS else DiscoveryQuestionType.CLARIFICATION,
             source_type=DiscoveryQuestionSource.RULE_TRIGGER,
-            prompt_text=f"I have a first signal for {dimension.value}, but I need one more concrete detail to make it actionable. Can you be a bit more specific?",
-            why="The current answer is still too vague to use safely.",
-            answer_shape=ExpectedAnswerShape.OPEN_TEXT,
-            priority=50,
+            prompt_text=prompt_text,
+            why=why,
+            answer_shape=answer_shape,
+            priority=70,
             generated_from_answer_id=latest.answer_id,
         )
 
@@ -368,6 +423,287 @@ class QuestionPlanner:
         if len(set(recent_dimensions)) == 1 and recent_dimensions[0] not in unanswered:
             return unanswered[0]
         return None
+
+    def _normalize_answer(self, dimension: DiscoveryDimension, text: str) -> Any | None:
+        lowered = text.lower()
+
+        if dimension in {
+            DiscoveryDimension.TARGET_ANNUAL_RETURN,
+            DiscoveryDimension.MAX_DRAWDOWN_LIMIT,
+            DiscoveryDimension.MAX_ANNUAL_VOLATILITY,
+            DiscoveryDimension.MAX_LEVERAGE_RATIO,
+            DiscoveryDimension.SINGLE_ASSET_CAP,
+        }:
+            return self._extract_number(lowered)
+
+        if dimension is DiscoveryDimension.INVESTMENT_HORIZON:
+            years = self._extract_years(lowered)
+            return years if years is not None else self._extract_int(lowered)
+
+        if dimension in {DiscoveryDimension.ANNUAL_LIQUIDITY_NEED, DiscoveryDimension.AUM_ALLOCATED}:
+            return self._extract_money(lowered)
+
+        if dimension is DiscoveryDimension.LIQUIDITY_FREQUENCY:
+            return self._extract_keyword(lowered, LIQUIDITY_FREQUENCY_KEYWORDS)
+
+        if dimension is DiscoveryDimension.ACCOUNT_ENTITY_TYPE:
+            return self._extract_keyword(lowered, ACCOUNT_ENTITY_KEYWORDS)
+
+        if dimension is DiscoveryDimension.EXECUTION_MODE:
+            return self._extract_keyword(lowered, EXECUTION_MODE_KEYWORDS)
+
+        if dimension is DiscoveryDimension.BASE_CURRENCY:
+            return self._extract_currency(text)
+
+        if dimension is DiscoveryDimension.TAX_RESIDENCY:
+            return text.strip() if text.strip() else None
+
+        if dimension is DiscoveryDimension.BLOCKED_SECTORS:
+            if NONE_RE.search(text):
+                return []
+            sectors = self._extract_sectors(lowered)
+            return sectors or None
+
+        if dimension is DiscoveryDimension.BLOCKED_TICKERS:
+            if NONE_RE.search(text):
+                return []
+            tickers = sorted({token.upper() for token in TICKER_RE.findall(text)})
+            return tickers or None
+
+        if dimension in TRAIT_DIMENSIONS:
+            return text.strip() if self._has_trait_depth(text) else None
+
+        return text.strip() or None
+
+    def _is_usable_value(self, dimension: DiscoveryDimension, normalized: Any | None, text: str) -> bool:
+        if dimension in LIST_DIMENSIONS:
+            return normalized is not None
+        if dimension in TRAIT_DIMENSIONS:
+            return normalized is not None
+        return normalized is not None and not AMBIGUITY_RE.search(text)
+
+    def _gap_message(self, dimension: DiscoveryDimension) -> str:
+        return f"{dimension.value} still needs a more concrete answer."
+
+    def _follow_up_prompt(
+        self,
+        dimension: DiscoveryDimension,
+        text: str,
+    ) -> tuple[str, str, ExpectedAnswerShape]:
+        if dimension is DiscoveryDimension.TARGET_ANNUAL_RETURN:
+            return (
+                "Please give one explicit annual return target percentage, such as 6, 8.5, or 10.",
+                "The optimization target needs one concrete number.",
+                ExpectedAnswerShape.NUMBER,
+            )
+        if dimension is DiscoveryDimension.INVESTMENT_HORIZON:
+            return (
+                "Please translate that horizon into a concrete number of years.",
+                "The portfolio horizon has to be machine-usable, not just 'long term'.",
+                ExpectedAnswerShape.NUMBER,
+            )
+        if dimension is DiscoveryDimension.ANNUAL_LIQUIDITY_NEED:
+            return (
+                "What annual cash amount should I reserve for this mandate, in dollars or the base currency amount?",
+                "The system needs an absolute annual liquidity number.",
+                ExpectedAnswerShape.MONEY_RANGE,
+            )
+        if dimension is DiscoveryDimension.LIQUIDITY_FREQUENCY:
+            return (
+                "Should that liquidity be treated as monthly, quarterly, annual, or none?",
+                "Liquidity cadence affects the shape of future allocations.",
+                ExpectedAnswerShape.CHOICE,
+            )
+        if dimension is DiscoveryDimension.MAX_DRAWDOWN_LIMIT:
+            return (
+                "What exact drawdown percentage should trigger a hard risk response?",
+                "Drawdown limits need to be explicit to become enforceable.",
+                ExpectedAnswerShape.NUMBER,
+            )
+        if dimension is DiscoveryDimension.MAX_ANNUAL_VOLATILITY:
+            return (
+                "What annualized volatility percentage should be treated as the ceiling here?",
+                "Volatility needs a numeric cap rather than a qualitative label.",
+                ExpectedAnswerShape.NUMBER,
+            )
+        if dimension is DiscoveryDimension.MAX_LEVERAGE_RATIO:
+            return (
+                "Please give one leverage ratio limit. Use 0 if leverage is completely forbidden.",
+                "Leverage permission must be binary and numeric.",
+                ExpectedAnswerShape.NUMBER,
+            )
+        if dimension is DiscoveryDimension.SINGLE_ASSET_CAP:
+            return (
+                "What exact single-asset cap percentage should the system enforce?",
+                "Concentration control needs a concrete cap.",
+                ExpectedAnswerShape.NUMBER,
+            )
+        if dimension is DiscoveryDimension.BLOCKED_SECTORS:
+            return (
+                "List the blocked sectors explicitly, or say none if there are no sector bans.",
+                "Sector constraints must be filterable by name.",
+                ExpectedAnswerShape.LIST,
+            )
+        if dimension is DiscoveryDimension.BLOCKED_TICKERS:
+            return (
+                "List the blocked tickers explicitly, or say none if there are no ticker bans.",
+                "Ticker restrictions must be machine-readable.",
+                ExpectedAnswerShape.LIST,
+            )
+        if dimension is DiscoveryDimension.BASE_CURRENCY:
+            return (
+                "Please give the base currency explicitly, such as USD, HKD, EUR, or CNY.",
+                "Currency assumptions should never be guessed.",
+                ExpectedAnswerShape.CHOICE,
+            )
+        if dimension is DiscoveryDimension.TAX_RESIDENCY:
+            return (
+                "Which tax jurisdiction should I treat as the governing one for this account?",
+                "Tax-aware logic needs one explicit residency or jurisdiction.",
+                ExpectedAnswerShape.OPEN_TEXT,
+            )
+        if dimension is DiscoveryDimension.ACCOUNT_ENTITY_TYPE:
+            return (
+                "Please choose one: individual, trust, or corporate.",
+                "Entity type affects execution and compliance assumptions.",
+                ExpectedAnswerShape.CHOICE,
+            )
+        if dimension is DiscoveryDimension.AUM_ALLOCATED:
+            return (
+                "What is the approximate total capital amount allocated to this mandate?",
+                "The system needs the capital base to size risk correctly.",
+                ExpectedAnswerShape.MONEY_RANGE,
+            )
+        if dimension is DiscoveryDimension.EXECUTION_MODE:
+            return (
+                "Should this be advisory with human confirmation, or discretionary with delegated execution authority?",
+                "Execution mode defines the account's permission boundary.",
+                ExpectedAnswerShape.CHOICE,
+            )
+        if dimension is DiscoveryDimension.FINANCIAL_LITERACY:
+            return (
+                "Please describe the user's financial literacy more concretely, including what products or concepts they truly understand.",
+                "The agent needs a practical communication model, not a vague sophistication label.",
+                ExpectedAnswerShape.OPEN_TEXT,
+            )
+        if dimension is DiscoveryDimension.WEALTH_ORIGIN_DNA:
+            return (
+                "Please explain the capital story in a way that reveals what kinds of assets or narratives the user naturally trusts or distrusts.",
+                "Wealth origin should influence interpretation, not just be a biography note.",
+                ExpectedAnswerShape.OPEN_TEXT,
+            )
+        return (
+            "Please describe the user's stress behavior more concretely, including what actually happens when markets fall fast.",
+            "Behavioral risk needs specific observed patterns, not just a label like conservative or aggressive.",
+            ExpectedAnswerShape.OPEN_TEXT,
+        )
+
+    def _derive_signals(self, dimension: DiscoveryDimension, text: str, normalized: Any | None) -> list[str]:
+        lowered = text.lower()
+        signals: list[str] = []
+        if normalized is not None:
+            signals.append("normalized")
+        if AMBIGUITY_RE.search(text):
+            signals.append("ambiguity")
+        if dimension in NUMERIC_DIMENSIONS and normalized is not None:
+            signals.append("quantified")
+        if dimension in LIST_DIMENSIONS:
+            signals.append("filter_rule")
+        if dimension in TRAIT_DIMENSIONS:
+            signals.append("persona_trait")
+        if "panic" in lowered or "anxious" in lowered:
+            signals.append("stress_anxiety")
+        if "founder" in lowered or "business" in lowered or "inherit" in lowered:
+            signals.append("wealth_origin")
+        return signals
+
+    def _numeric_conflict(self, dimension: DiscoveryDimension, normalized: Any, lowered: str) -> bool:
+        value = float(normalized)
+        if dimension is DiscoveryDimension.MAX_DRAWDOWN_LIMIT:
+            return value > 80
+        if dimension is DiscoveryDimension.MAX_ANNUAL_VOLATILITY:
+            return value > 100
+        if dimension is DiscoveryDimension.MAX_LEVERAGE_RATIO:
+            return value > 10
+        if dimension is DiscoveryDimension.SINGLE_ASSET_CAP:
+            return value > 100
+        if dimension is DiscoveryDimension.TARGET_ANNUAL_RETURN:
+            return value > 100
+        if dimension is DiscoveryDimension.INVESTMENT_HORIZON:
+            return value <= 0
+        if dimension in {DiscoveryDimension.ANNUAL_LIQUIDITY_NEED, DiscoveryDimension.AUM_ALLOCATED}:
+            return value < 0
+        return False
+
+    def _extract_number(self, lowered: str) -> float | None:
+        match = NUMBER_RE.search(lowered)
+        if match is None:
+            return None
+        try:
+            return float(match.group(1))
+        except ValueError:
+            return None
+
+    def _extract_int(self, lowered: str) -> int | None:
+        match = NUMBER_RE.search(lowered)
+        if match is None:
+            return None
+        try:
+            return int(float(match.group(1)))
+        except ValueError:
+            return None
+
+    def _extract_years(self, lowered: str) -> int | None:
+        match = YEARS_RE.search(lowered)
+        if match is None:
+            return None
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+
+    def _extract_money(self, lowered: str) -> float | None:
+        match = MONEY_RE.search(lowered.replace(",", ""))
+        if match is None:
+            return None
+        token = match.group(1).replace("$", "").strip()
+        multiplier = 1.0
+        if token.lower().endswith("k"):
+            multiplier = 1_000.0
+            token = token[:-1]
+        elif token.lower().endswith("m"):
+            multiplier = 1_000_000.0
+            token = token[:-1]
+        elif token.lower().endswith("b"):
+            multiplier = 1_000_000_000.0
+            token = token[:-1]
+        try:
+            return float(token) * multiplier
+        except ValueError:
+            return None
+
+    def _extract_keyword(self, lowered: str, keyword_map: dict[str, str]) -> str | None:
+        for keyword, value in keyword_map.items():
+            if keyword in lowered:
+                return value
+        return None
+
+    def _extract_currency(self, text: str) -> str | None:
+        match = CURRENCY_RE.search(text.upper())
+        if match is not None:
+            return match.group(1)
+        lowered = text.lower().replace(" ", "")
+        for keyword, value in CURRENCY_KEYWORDS.items():
+            if keyword in lowered:
+                return value
+        return None
+
+    def _extract_sectors(self, lowered: str) -> list[str]:
+        sectors = {value for keyword, value in SECTOR_MAP.items() if keyword in lowered}
+        return sorted(sectors)
+
+    def _has_trait_depth(self, text: str) -> bool:
+        return len(text.split()) >= 10 and not NONE_RE.search(text)
 
     def _get_state(self, session: DiscoverySession, dimension: DiscoveryDimension) -> DimensionState:
         for state in session.dimension_states:
@@ -405,37 +741,3 @@ class QuestionPlanner:
             generated_from_answer_id=generated_from_answer_id,
             stop_condition_target=dimension.value,
         )
-
-    def _derive_signals(self, text: str) -> list[str]:
-        lowered = text.lower()
-        signals: list[str] = []
-        if AMBIGUITY_RE.search(text):
-            signals.append("ambiguity")
-        if LIQUIDITY_RE.search(text):
-            signals.append("liquidity")
-        if RISK_AVERSION_RE.search(text):
-            signals.append("risk_aversion")
-        if RISK_SEEKING_RE.search(text):
-            signals.append("risk_seeking")
-        if VALUES_RE.search(text):
-            signals.append("values_or_exclusion")
-        if CONCENTRATION_RE.search(text):
-            signals.append("concentration")
-        if REVIEW_RE.search(text):
-            signals.append("review_preference")
-        if "tech" in lowered:
-            signals.append("tech_exposure")
-        return signals
-
-    def _extract_float(self, lowered: str) -> float | None:
-        match = NUMBER_RE.search(lowered)
-        if match is None:
-            return None
-        try:
-            return float(match.group(1))
-        except ValueError:
-            return None
-
-
-def long_narrative(text: str) -> bool:
-    return len(text.split()) >= 14

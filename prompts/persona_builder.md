@@ -24,10 +24,10 @@ Use markdown and include these sections:
 1. Title
 2. Narrative summary
 3. Four-dimensional evaluation
-   - financial objectives
-   - risk posture
-   - constraints and concentration
-   - background and collaboration
+   - financial objectives and liquidity boundaries
+   - risk boundaries
+   - investment constraints and account foundation
+   - persona traits and behavioral boundaries
 4. Long-term memory
 5. Short-term memory
 6. Guidance for future recommendations

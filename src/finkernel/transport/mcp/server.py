@@ -73,7 +73,9 @@ def create_mcp_server(*, profile_discovery_service: ProfileDiscoveryService, pro
                     "display_name": item.display_name,
                     "mandate_summary": item.mandate_summary,
                     "risk_budget": item.risk_budget.value,
-                    "forbidden_symbols": item.forbidden_symbols,
+                    "blocked_sectors": item.investment_constraints.blocked_sectors,
+                    "blocked_tickers": item.investment_constraints.blocked_tickers,
+                    "base_currency": item.investment_constraints.base_currency,
                     "created_from": item.created_from,
                 }
                 for item in profiles.values()
@@ -124,7 +126,7 @@ def create_mcp_server(*, profile_discovery_service: ProfileDiscoveryService, pro
         return profile_discovery_service.generate_draft(discovery_session_id).model_dump(mode="json")
 
     @mcp.tool(name="confirm_profile_draft")
-    def confirm_profile_draft(profile_draft_id: str, profile_id: str | None = None, display_name: str | None = None, persona_markdown: str | None = None) -> dict:
+    def confirm_profile_draft(profile_draft_id: str, persona_markdown: str, profile_id: str | None = None, display_name: str | None = None) -> dict:
         profile = profile_discovery_service.confirm_draft(
             draft_id=profile_draft_id,
             payload=ConfirmProfileDraftRequest(profile_id=profile_id, display_name=display_name, persona_markdown=persona_markdown),

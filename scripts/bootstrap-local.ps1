@@ -74,15 +74,10 @@ function Prompt-Value {
 
 function Get-DotEnvDefaults {
     return @{
-        APP_NAME = "FinKernel"
-        ENVIRONMENT = "development"
-        API_PREFIX = "/api"
         APP_PORT = "8000"
         POSTGRES_DB = "finkernel"
         POSTGRES_USER = "finkernel"
         POSTGRES_PASSWORD = "change-me"
-        ENABLE_PGVECTOR = "true"
-        PROFILE_STORE_PATH = "config/persona-profiles.json"
     }
 }
 
@@ -122,24 +117,14 @@ function Write-DotEnv {
     )
 
     $lines = @(
-        "# Docker-first local defaults for FinKernel Phase 1",
-        "APP_NAME=$($Values.APP_NAME)",
-        "ENVIRONMENT=$($Values.ENVIRONMENT)",
-        "API_PREFIX=$($Values.API_PREFIX)",
-        "",
+        "# Docker-first local settings for FinKernel Phase 1",
         "# Host port exposed by the FinKernel HTTP app.",
         "APP_PORT=$($Values.APP_PORT)",
         "",
         "# PostgreSQL credentials used by the compose-managed pgvector container.",
         "POSTGRES_DB=$($Values.POSTGRES_DB)",
         "POSTGRES_USER=$($Values.POSTGRES_USER)",
-        "POSTGRES_PASSWORD=$($Values.POSTGRES_PASSWORD)",
-        "",
-        "# FinKernel always enables pgvector in the Docker-first local stack.",
-        "ENABLE_PGVECTOR=true",
-        "",
-        "# Seed risk profiles used for local bootstrap and demos.",
-        "PROFILE_STORE_PATH=$($Values.PROFILE_STORE_PATH)"
+        "POSTGRES_PASSWORD=$($Values.POSTGRES_PASSWORD)"
     )
     $lines | Set-Content -Path $Path -Encoding UTF8
 }
@@ -153,15 +138,10 @@ function Prompt-DotEnvValues {
     Write-Host "FinKernel local setup is Docker-only for Phase 1. The installer will configure Docker Compose, start PostgreSQL with pgvector, and then register host-agent MCP access." -ForegroundColor Cyan
 
     return @{
-        APP_NAME = (Prompt-Value -Message "APP_NAME" -Default $CurrentValues.APP_NAME)
-        ENVIRONMENT = (Prompt-Value -Message "ENVIRONMENT" -Default $CurrentValues.ENVIRONMENT)
-        API_PREFIX = (Prompt-Value -Message "API_PREFIX" -Default $CurrentValues.API_PREFIX)
         APP_PORT = (Prompt-Value -Message "Host port for FinKernel HTTP and MCP" -Default $CurrentValues.APP_PORT)
         POSTGRES_DB = (Prompt-Value -Message "Docker PostgreSQL database name" -Default $CurrentValues.POSTGRES_DB)
         POSTGRES_USER = (Prompt-Value -Message "Docker PostgreSQL user" -Default $CurrentValues.POSTGRES_USER)
         POSTGRES_PASSWORD = (Prompt-Value -Message "Docker PostgreSQL password" -Default $CurrentValues.POSTGRES_PASSWORD -Secret)
-        ENABLE_PGVECTOR = "true"
-        PROFILE_STORE_PATH = (Prompt-Value -Message "PROFILE_STORE_PATH" -Default $CurrentValues.PROFILE_STORE_PATH)
     }
 }
 
@@ -280,7 +260,7 @@ function Write-AgentBundle {
         [string]$HttpConfigPath
     )
 
-    $bundleRoot = Join-Path $TargetDirectory "finkernel-agent"
+    $bundleRoot = Join-Path $TargetDirectory "finkernel-profile"
     $bundlePromptDir = Join-Path $bundleRoot "prompts"
     Ensure-Directory -Path $bundlePromptDir
 
@@ -288,11 +268,16 @@ function Write-AgentBundle {
     Copy-Item (Join-Path $RepoRoot "SKILL.md") (Join-Path $bundleRoot "SKILL.md") -Force
     Copy-Item (Join-Path $RepoRoot "prompts\\*.md") $bundlePromptDir -Force
 
+    $legacyBundleRoot = Join-Path $TargetDirectory "finkernel-agent"
+    if (Test-Path $legacyBundleRoot) {
+        Remove-Item -LiteralPath $legacyBundleRoot -Recurse -Force
+    }
+
     $bundleReadme = @"
-FinKernel agent bundle
+FinKernel profile skill bundle
 
 - host-agent-mcp-http.json: HTTP MCP registration
-- SKILL.md: top-level host skill
+- SKILL.md: FinKernel Profile skill
 - prompts\\: full FinKernel routing + persona prompt pack
 "@
     $bundleReadme | Set-Content -Path (Join-Path $bundleRoot "README.txt") -Encoding UTF8
@@ -498,9 +483,9 @@ if ($writeEnv) {
     Write-DotEnv -Path $envPath -Values $envValues
 }
 
-$profileSeedPath = Join-Path $repoRoot "config\\persona-profiles.json"
-if (-not (Test-Path $profileSeedPath)) {
-    Copy-Item (Join-Path $repoRoot "config\\persona-profiles.example.json") $profileSeedPath
+$profileStorePath = Join-Path $repoRoot "config\\persona-profiles.json"
+if (-not (Test-Path $profileStorePath)) {
+    Copy-Item (Join-Path $repoRoot "config\\persona-profiles.example.json") $profileStorePath
 }
 
 $composeMode = Get-DockerComposeMode
@@ -534,7 +519,7 @@ if ($agentChoice -ne "Skip agent integration") {
 $installStatePath = Write-InstallState -RepoRoot $repoRoot -State @{
     installed_at_utc = (Get-Date).ToUniversalTime().ToString("o")
     env_path = $envPath
-    profile_seed_path = $profileSeedPath
+    profile_store_path = $profileStorePath
     http_config_path = $httpConfigPath
     app_port = $appPort
     mcp_url = $mcpUrl
@@ -549,7 +534,7 @@ Write-Host "FinKernel bootstrap complete." -ForegroundColor Green
 Write-Host ""
 Write-Host "Environment:"
 Write-Host "  .env -> $envPath"
-Write-Host "  profile seed -> $profileSeedPath"
+Write-Host "  profile store -> $profileStorePath"
 Write-Host ""
 Write-Host "Docker services:"
 Write-Host "  FinKernel health -> http://localhost:$appPort/api/health"
@@ -562,7 +547,7 @@ Write-Host "Install manifest:"
 Write-Host "  $installStatePath"
 Write-Host ""
 if ($bundleRoot) {
-    Write-Host "Injected agent bundle:"
+    Write-Host "Injected profile skill bundle:"
     Write-Host "  $bundleRoot"
     Write-Host ""
 }

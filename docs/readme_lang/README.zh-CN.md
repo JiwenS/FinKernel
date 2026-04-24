@@ -94,7 +94,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-local.ps1
 这个 bootstrap 流程的目标不是“只是跑一个脚本”，而是像一个引导式安装器。它会：
 
 - 逐项引导 `.env` 配置
-- 确保 `config/persona-profiles.json` 会从示例 seed 自动生成
+- 确保 `config/persona-profiles.json` 会以空白本地 profile 存储文件的形式生成
 - 用 Docker 启动 FinKernel 与带 pgvector 的 PostgreSQL
 - 等待 HTTP app 和 MCP endpoint 变为可用
 - 生成本地 HTTP MCP 配置
@@ -165,10 +165,10 @@ flowchart LR
 
 | Agent | 快速配置方式 |
 | --- | --- |
-| `Codex` | 安装到 `~/.codex/skills/finkernel-agent`，并尝试执行 `codex mcp add` |
-| `Claude Code` | 安装到 `~/.claude/skills/finkernel-agent`，并尝试执行 `claude mcp add --transport http --scope local` |
-| `OpenClaw` | 安装到 `~/.openclaw/skills/finkernel-agent`，并尝试通过 `openclaw mcp set` 写入 `streamable-http` MCP 配置 |
-| `Hermes` | 安装到 `~/.hermes/skills/finkernel-agent`，并尝试执行 `hermes config set mcp_servers.finkernel.url` |
+| `Codex` | 安装到 `~/.codex/skills/finkernel-profile`，并尝试执行 `codex mcp add` |
+| `Claude Code` | 安装到 `~/.claude/skills/finkernel-profile`，并尝试执行 `claude mcp add --transport http --scope local` |
+| `OpenClaw` | 安装到 `~/.openclaw/skills/finkernel-profile`，并尝试通过 `openclaw mcp set` 写入 `streamable-http` MCP 配置 |
+| `Hermes` | 安装到 `~/.hermes/skills/finkernel-profile`，并尝试执行 `hermes config set mcp_servers.finkernel.url` |
 | `Custom MCP client` | 手动使用导出的 `host-agent-mcp-http.json` bundle 文件 |
 
 ### 核心 MCP 工具

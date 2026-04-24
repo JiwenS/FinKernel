@@ -25,7 +25,17 @@ If the user cloned the repo and wants a working local install with host-agent re
 6. use `prompts/persona_assessment.md` for the assessment conversation layer
 7. use `SKILL.md` as the host-side skill entrypoint
 
-The bootstrap script prepares `.env`, ensures the local seed profile file exists, runs Docker Compose, waits for the app to become healthy, emits a local HTTP MCP config, writes a FinKernel skill bundle into the selected agent directory, and attempts agent-specific HTTP MCP registration for Codex, Claude Code, OpenClaw, or Hermes.
+The bootstrap script prepares `.env`, ensures the local blank profile store file exists, runs Docker Compose, waits for the app to become healthy, emits a local HTTP MCP config, writes a FinKernel skill bundle into the selected agent directory, and attempts agent-specific HTTP MCP registration for Codex, Claude Code, OpenClaw, or Hermes.
+
+## Important runtime facts
+
+- FinKernel currently exposes MCP tools, not MCP resources.
+- The bootstrap registration alias is `finkernel`.
+- After MCP registration or skill updates, start a new host session so the tool surface is reloaded cleanly.
+
+For profile-building conversations, the host should not probe local files,
+shell commands, `.env`, or database state as a substitute for the FinKernel
+tool surface.
 
 ## Prompt layer
 
@@ -39,6 +49,10 @@ For conversations whose primary goal is to build, complete, or refresh the profi
 - `assess_persona`
 
 That tool lets the host treat FinKernel as a single orchestration surface: it decides whether FinKernel should add a persona from scratch, continue an update, ask the user to choose a section to refresh, or move into draft confirmation.
+
+If `assess_persona` is not available in the current session, the host should
+stop and report that FinKernel MCP tools are not mounted, rather than falling
+back to repo inspection or local persistence probing.
 
 ## Expected first tool call
 

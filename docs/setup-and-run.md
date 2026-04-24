@@ -20,7 +20,7 @@ Run one command from the repo root:
 That bootstrap script will:
 
 - guide `.env` setup one field at a time
-- ensure `config/persona-profiles.json` exists from the example seed
+- ensure `config/persona-profiles.json` exists as a blank local profile store
 - run `docker compose up -d --build --remove-orphans`
 - wait for PostgreSQL and the FinKernel HTTP app to become healthy
 - write `config/host-agent-mcp-http.local.json`
@@ -47,7 +47,7 @@ If you changed `APP_PORT` in `.env`, use that port instead of `8000`.
 
 ## Uninstall the local stack
 
-To remove the FinKernel Docker stack, generated local files, and installed FinKernel agent bundles:
+To remove the FinKernel Docker stack, generated local files, and installed FinKernel profile skill bundles:
 
 - `powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-local.ps1`
 
@@ -56,7 +56,7 @@ Helpful switches:
 - `-Yes`: skip the confirmation prompt
 - `-KeepEnv`: keep `.env`
 - `-KeepSeedData`: keep `config/persona-profiles.json`
-- `-KeepAgentBundles`: keep installed `finkernel-agent` bundles
+- `-KeepAgentBundles`: keep installed `finkernel-profile` bundles
 - `-SkipAgentUnregistration`: keep MCP registrations in host agents
 - `-KeepDockerVolumes`: keep Docker volumes
 - `-KeepLocalImage`: keep the locally built Docker image
@@ -67,7 +67,7 @@ The supported manual alternative is still Docker-based:
 
 1. Copy `.env.example` to `.env`.
 2. Set at least `APP_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD`.
-3. Ensure `config/persona-profiles.json` exists, or copy it from `config/persona-profiles.example.json`.
+3. Ensure `config/persona-profiles.json` exists, or copy the blank scaffold from `config/persona-profiles.example.json`.
 4. Run `docker compose up -d --build`.
 5. Wait for `GET /api/health` to return `200`.
 

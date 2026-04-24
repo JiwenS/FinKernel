@@ -39,6 +39,17 @@ This profile should answer:
 - suggestion approval workflows
 - control-plane reconciliation
 
+## Forward architecture rules
+
+Phase 1 still ships only the profile foundation, but future module work should
+follow the shared product and orchestration rules documented in:
+
+- `docs/future-module-development-rules.md`
+
+That document defines how future direct module entries, notification setup,
+managed orchestration, and prerequisite checks should evolve without changing
+the Phase 1 scope stated here.
+
 ## Success criteria
 
 1. A new user can complete discovery and confirm an active profile.

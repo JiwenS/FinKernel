@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from datetime import datetime
 from enum import Enum
 from typing import Any
@@ -11,6 +12,24 @@ class RiskBudget(str, Enum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+
+
+class LiquidityFrequency(str, Enum):
+    NONE = "none"
+    MONTHLY = "monthly"
+    QUARTERLY = "quarterly"
+    ANNUAL = "annual"
+
+
+class AccountEntityType(str, Enum):
+    INDIVIDUAL = "individual"
+    TRUST = "trust"
+    CORPORATE = "corporate"
+
+
+class ExecutionMode(str, Enum):
+    DISCRETIONARY = "discretionary"
+    ADVISORY = "advisory"
 
 
 class ProfileLifecycleStatus(str, Enum):
@@ -28,6 +47,39 @@ class MemoryKind(str, Enum):
     SHORT_TERM = "short_term"
 
 
+class FinancialObjectives(BaseModel):
+    target_annual_return_pct: Decimal | None = Field(default=None, ge=0)
+    investment_horizon_years: int | None = Field(default=None, ge=0)
+    annual_liquidity_need: Decimal | None = Field(default=None, ge=0)
+    liquidity_frequency: LiquidityFrequency | None = None
+
+
+class RiskBoundaries(BaseModel):
+    max_drawdown_limit_pct: Decimal | None = Field(default=None, ge=0, le=100)
+    max_annual_volatility_pct: Decimal | None = Field(default=None, ge=0, le=100)
+    max_leverage_ratio: Decimal | None = Field(default=None, ge=0)
+    single_asset_cap_pct: Decimal | None = Field(default=None, ge=0, le=100)
+
+
+class InvestmentConstraints(BaseModel):
+    blocked_sectors: list[str] = Field(default_factory=list)
+    blocked_tickers: list[str] = Field(default_factory=list)
+    base_currency: str | None = None
+    tax_residency: str | None = None
+
+
+class AccountBackground(BaseModel):
+    account_entity_type: AccountEntityType | None = None
+    aum_allocated: Decimal | None = Field(default=None, ge=0)
+    execution_mode: ExecutionMode | None = None
+
+
+class PersonaTraits(BaseModel):
+    financial_literacy: str | None = None
+    wealth_origin_dna: str | None = None
+    behavioral_risk_profile: str | None = None
+
+
 class PersonaProfile(BaseModel):
     profile_id: str = Field(min_length=1)
     owner_id: str = Field(min_length=1)
@@ -39,8 +91,11 @@ class PersonaProfile(BaseModel):
     created_from: str | None = None
     supersedes_profile_version: int | None = Field(default=None, ge=1)
     risk_budget: RiskBudget
-    forbidden_symbols: list[str] = Field(default_factory=list)
-    hard_rules: dict[str, Any] = Field(default_factory=dict)
+    financial_objectives: FinancialObjectives = Field(default_factory=FinancialObjectives)
+    risk_boundaries: RiskBoundaries = Field(default_factory=RiskBoundaries)
+    investment_constraints: InvestmentConstraints = Field(default_factory=InvestmentConstraints)
+    account_background: AccountBackground = Field(default_factory=AccountBackground)
+    persona_traits: PersonaTraits = Field(default_factory=PersonaTraits)
     contextual_rules: list[dict[str, Any]] = Field(default_factory=list)
     long_term_memories: list[dict[str, Any]] = Field(default_factory=list)
     short_term_memories: list[dict[str, Any]] = Field(default_factory=list)
@@ -88,15 +143,25 @@ class RiskProfileSummary(BaseModel):
     display_name: str
     mandate_summary: str
     risk_budget: RiskBudget
-    objective: str | None = None
-    time_horizon: str | None = None
-    liquidity_needs: str | None = None
-    stress_response: str | None = None
-    loss_threshold: str | None = None
-    concentration_guidance: str | None = None
-    interaction_style: str | None = None
-    review_cadence: str | None = None
-    hard_constraints: list[str] = Field(default_factory=list)
+    persona_style: str
+    target_annual_return_pct: Decimal | None = None
+    investment_horizon_years: int | None = None
+    annual_liquidity_need: Decimal | None = None
+    liquidity_frequency: LiquidityFrequency | None = None
+    max_drawdown_limit_pct: Decimal | None = None
+    max_annual_volatility_pct: Decimal | None = None
+    max_leverage_ratio: Decimal | None = None
+    single_asset_cap_pct: Decimal | None = None
+    blocked_sectors: list[str] = Field(default_factory=list)
+    blocked_tickers: list[str] = Field(default_factory=list)
+    base_currency: str | None = None
+    tax_residency: str | None = None
+    account_entity_type: AccountEntityType | None = None
+    aum_allocated: Decimal | None = None
+    execution_mode: ExecutionMode | None = None
+    financial_literacy: str | None = None
+    wealth_origin_dna: str | None = None
+    behavioral_risk_profile: str | None = None
     contextual_rule_highlights: list[str] = Field(default_factory=list)
     long_term_memory_highlights: list[str] = Field(default_factory=list)
     short_term_memory_highlights: list[str] = Field(default_factory=list)
@@ -112,6 +177,13 @@ class PersonaSourcePacket(BaseModel):
     version: int
     display_name: str
     mandate_summary: str
+    persona_style: str
+    risk_budget: RiskBudget
+    financial_objectives: FinancialObjectives = Field(default_factory=FinancialObjectives)
+    risk_boundaries: RiskBoundaries = Field(default_factory=RiskBoundaries)
+    investment_constraints: InvestmentConstraints = Field(default_factory=InvestmentConstraints)
+    account_background: AccountBackground = Field(default_factory=AccountBackground)
+    persona_traits: PersonaTraits = Field(default_factory=PersonaTraits)
     persona_markdown: str | None = None
     persona_evidence: list[dict[str, Any]] = Field(default_factory=list)
     long_term_memories: list[dict[str, Any]] = Field(default_factory=list)

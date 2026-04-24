@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 import re
 from typing import Any, Iterator
 from uuid import uuid4
@@ -32,11 +33,19 @@ from finkernel.schemas.discovery import (
     ReviewProfileRequest,
 )
 from finkernel.schemas.profile import (
+    AccountBackground,
+    AccountEntityType,
     DistilledProfileMemoryResponse,
+    ExecutionMode,
+    FinancialObjectives,
+    InvestmentConstraints,
+    LiquidityFrequency,
     MemoryKind,
     PersonaProfile,
+    PersonaTraits,
     PersonaSourcePacket,
     ProfileLifecycleStatus,
+    RiskBoundaries,
     RiskBudget,
     RiskProfileSummary,
 )
@@ -59,39 +68,24 @@ UPDATE_OPTION_DEFINITIONS: tuple[PersonaUpdateOption, ...] = (
         description="Run the full persona assessment again before creating a refreshed profile version.",
     ),
     PersonaUpdateOption(
-        choice=PersonaUpdateChoice.OBJECTIVES_AND_HORIZON,
-        label="Goals and horizon",
-        description="Update what the portfolio is for and how long this mandate should govern the capital.",
+        choice=PersonaUpdateChoice.FINANCIAL_OBJECTIVES,
+        label="Financial objectives",
+        description="Refresh return target, horizon, and recurring liquidity needs.",
     ),
     PersonaUpdateOption(
-        choice=PersonaUpdateChoice.LIQUIDITY_NEEDS,
-        label="Liquidity needs",
-        description="Refresh near-term cash needs, timing, and how sensitive those needs are to market drawdowns.",
+        choice=PersonaUpdateChoice.RISK_BOUNDARIES,
+        label="Risk boundaries",
+        description="Refresh drawdown, volatility, leverage, and single-asset concentration limits.",
     ),
     PersonaUpdateOption(
-        choice=PersonaUpdateChoice.RISK_TOLERANCE,
-        label="Risk tolerance",
-        description="Revisit drawdown response, loss threshold, and the user's comfort with volatility.",
+        choice=PersonaUpdateChoice.INVESTMENT_CONSTRAINTS,
+        label="Investment constraints",
+        description="Refresh blocked sectors, blocked tickers, base currency, and tax residency assumptions.",
     ),
     PersonaUpdateOption(
-        choice=PersonaUpdateChoice.CONSTRAINTS_AND_EXCLUSIONS,
-        label="Constraints",
-        description="Refresh hard restrictions, exclusions, and values-driven guardrails.",
-    ),
-    PersonaUpdateOption(
-        choice=PersonaUpdateChoice.CONCENTRATION_LIMITS,
-        label="Concentration limits",
-        description="Update single-name, theme, or position-size concentration guidance.",
-    ),
-    PersonaUpdateOption(
-        choice=PersonaUpdateChoice.COMMUNICATION_PREFERENCES,
-        label="Communication style",
-        description="Adjust how proactive FinKernel should be and how often the persona should be reviewed.",
-    ),
-    PersonaUpdateOption(
-        choice=PersonaUpdateChoice.BACKGROUND_CONTEXT,
-        label="Background context",
-        description="Capture new life context, responsibilities, or prior experiences that should shape the persona.",
+        choice=PersonaUpdateChoice.ACCOUNT_FOUNDATION_AND_TRAITS,
+        label="Account foundation and traits",
+        description="Refresh entity type, AUM, execution mode, financial literacy, wealth origin DNA, and behavioral risk profile.",
     ),
     PersonaUpdateOption(
         choice=PersonaUpdateChoice.NO_CHANGES,
@@ -101,23 +95,33 @@ UPDATE_OPTION_DEFINITIONS: tuple[PersonaUpdateOption, ...] = (
 )
 
 UPDATE_CHOICE_DIMENSIONS: dict[PersonaUpdateChoice, list[DiscoveryDimension]] = {
-    PersonaUpdateChoice.FULL_REASSESSMENT: list(MANDATORY_DIMENSIONS) + [DiscoveryDimension.BACKGROUND],
-    PersonaUpdateChoice.OBJECTIVES_AND_HORIZON: [
-        DiscoveryDimension.OBJECTIVE,
-        DiscoveryDimension.HORIZON,
+    PersonaUpdateChoice.FULL_REASSESSMENT: list(MANDATORY_DIMENSIONS),
+    PersonaUpdateChoice.FINANCIAL_OBJECTIVES: [
+        DiscoveryDimension.TARGET_ANNUAL_RETURN,
+        DiscoveryDimension.INVESTMENT_HORIZON,
+        DiscoveryDimension.ANNUAL_LIQUIDITY_NEED,
+        DiscoveryDimension.LIQUIDITY_FREQUENCY,
     ],
-    PersonaUpdateChoice.LIQUIDITY_NEEDS: [DiscoveryDimension.LIQUIDITY],
-    PersonaUpdateChoice.RISK_TOLERANCE: [
-        DiscoveryDimension.RISK_RESPONSE,
-        DiscoveryDimension.LOSS_THRESHOLD,
+    PersonaUpdateChoice.RISK_BOUNDARIES: [
+        DiscoveryDimension.MAX_DRAWDOWN_LIMIT,
+        DiscoveryDimension.MAX_ANNUAL_VOLATILITY,
+        DiscoveryDimension.MAX_LEVERAGE_RATIO,
+        DiscoveryDimension.SINGLE_ASSET_CAP,
     ],
-    PersonaUpdateChoice.CONSTRAINTS_AND_EXCLUSIONS: [DiscoveryDimension.CONSTRAINTS],
-    PersonaUpdateChoice.CONCENTRATION_LIMITS: [DiscoveryDimension.CONCENTRATION],
-    PersonaUpdateChoice.COMMUNICATION_PREFERENCES: [
-        DiscoveryDimension.INTERACTION_STYLE,
-        DiscoveryDimension.REVIEW_CADENCE,
+    PersonaUpdateChoice.INVESTMENT_CONSTRAINTS: [
+        DiscoveryDimension.BLOCKED_SECTORS,
+        DiscoveryDimension.BLOCKED_TICKERS,
+        DiscoveryDimension.BASE_CURRENCY,
+        DiscoveryDimension.TAX_RESIDENCY,
     ],
-    PersonaUpdateChoice.BACKGROUND_CONTEXT: [DiscoveryDimension.BACKGROUND],
+    PersonaUpdateChoice.ACCOUNT_FOUNDATION_AND_TRAITS: [
+        DiscoveryDimension.ACCOUNT_ENTITY_TYPE,
+        DiscoveryDimension.AUM_ALLOCATED,
+        DiscoveryDimension.EXECUTION_MODE,
+        DiscoveryDimension.FINANCIAL_LITERACY,
+        DiscoveryDimension.WEALTH_ORIGIN_DNA,
+        DiscoveryDimension.BEHAVIORAL_RISK_PROFILE,
+    ],
 }
 
 
@@ -290,6 +294,13 @@ class ProfileDiscoveryService:
             version=profile.version,
             display_name=profile.display_name,
             mandate_summary=profile.mandate_summary,
+            persona_style=profile.persona_style,
+            risk_budget=profile.risk_budget,
+            financial_objectives=profile.financial_objectives,
+            risk_boundaries=profile.risk_boundaries,
+            investment_constraints=profile.investment_constraints,
+            account_background=profile.account_background,
+            persona_traits=profile.persona_traits,
             persona_markdown=profile.persona_markdown,
             persona_evidence=profile.persona_evidence,
             long_term_memories=profile.long_term_memories,
@@ -299,14 +310,6 @@ class ProfileDiscoveryService:
 
     def get_risk_profile_summary(self, profile_id: str, *, version: int | None = None) -> RiskProfileSummary:
         profile = self.get_profile(profile_id, version=version)
-        financial = profile.hard_rules.get("financial_objectives", {})
-        risk = profile.hard_rules.get("risk_guardrails", {})
-        constraints = profile.hard_rules.get("investment_constraints", {})
-        interaction = profile.hard_rules.get("interaction_model", {})
-        hard_constraints = []
-        if constraints.get("constraints"):
-            hard_constraints.append(str(constraints["constraints"]))
-        hard_constraints.extend(profile.forbidden_symbols)
         return RiskProfileSummary(
             profile_id=profile.profile_id,
             owner_id=profile.owner_id,
@@ -314,15 +317,25 @@ class ProfileDiscoveryService:
             display_name=profile.display_name,
             mandate_summary=profile.mandate_summary,
             risk_budget=profile.risk_budget,
-            objective=financial.get("objective"),
-            time_horizon=financial.get("time_horizon"),
-            liquidity_needs=financial.get("liquidity_needs"),
-            stress_response=risk.get("stress_response"),
-            loss_threshold=risk.get("max_drawdown_signal"),
-            concentration_guidance=constraints.get("concentration"),
-            interaction_style=interaction.get("interaction_style"),
-            review_cadence=interaction.get("review_cadence"),
-            hard_constraints=hard_constraints,
+            persona_style=profile.persona_style,
+            target_annual_return_pct=profile.financial_objectives.target_annual_return_pct,
+            investment_horizon_years=profile.financial_objectives.investment_horizon_years,
+            annual_liquidity_need=profile.financial_objectives.annual_liquidity_need,
+            liquidity_frequency=profile.financial_objectives.liquidity_frequency,
+            max_drawdown_limit_pct=profile.risk_boundaries.max_drawdown_limit_pct,
+            max_annual_volatility_pct=profile.risk_boundaries.max_annual_volatility_pct,
+            max_leverage_ratio=profile.risk_boundaries.max_leverage_ratio,
+            single_asset_cap_pct=profile.risk_boundaries.single_asset_cap_pct,
+            blocked_sectors=profile.investment_constraints.blocked_sectors,
+            blocked_tickers=profile.investment_constraints.blocked_tickers,
+            base_currency=profile.investment_constraints.base_currency,
+            tax_residency=profile.investment_constraints.tax_residency,
+            account_entity_type=profile.account_background.account_entity_type,
+            aum_allocated=profile.account_background.aum_allocated,
+            execution_mode=profile.account_background.execution_mode,
+            financial_literacy=profile.persona_traits.financial_literacy,
+            wealth_origin_dna=profile.persona_traits.wealth_origin_dna,
+            behavioral_risk_profile=profile.persona_traits.behavioral_risk_profile,
             contextual_rule_highlights=[
                 str(item.get("rule_text") or item.get("rule") or "").strip()
                 for item in profile.contextual_rules
@@ -387,7 +400,7 @@ class ProfileDiscoveryService:
             source_profile_id=profile.profile_id,
             update_choice=PersonaUpdateChoice.FULL_REASSESSMENT,
             update_notes=payload.notes,
-            target_dimensions=list(MANDATORY_DIMENSIONS) + [DiscoveryDimension.BACKGROUND],
+            target_dimensions=list(MANDATORY_DIMENSIONS),
             status=DiscoverySessionStatus.DRAFT_READY,
             dimension_states=self._seed_dimension_states(),
             answers=self._seed_answers_from_profile(profile, session_id=session_id, payload=payload),
@@ -555,23 +568,17 @@ class ProfileDiscoveryService:
     def _seed_dimension_states(self) -> list[DimensionState]:
         states = build_empty_dimension_states()
         for state in states:
-            if state.dimension is DiscoveryDimension.BACKGROUND:
-                state.coverage_score = 1
-                state.confidence_score = 1
-                state.depth_score = 1
-            else:
-                state.coverage_score = 3
-                state.confidence_score = 3
-                state.depth_score = 2
+            state.coverage_score = 3
+            state.confidence_score = 3
+            state.depth_score = 2
         return states
 
     def _seed_answers_from_profile(self, profile: PersonaProfile, *, session_id: str, payload: ReviewProfileRequest) -> list[DiscoveryAnswer]:
         answers = self._seed_review_answers_from_evidence(profile)
         if not answers:
             answers = self._seed_review_answers_from_structured_profile(profile)
-        background_seed = self._seed_background_summary(profile, payload=payload)
-        if background_seed:
-            answers.append((DiscoveryDimension.BACKGROUND, background_seed))
+        if payload.notes:
+            answers.append((DiscoveryDimension.BEHAVIORAL_RISK_PROFILE, f"Review note: {payload.notes}"))
 
         seeded_answers: list[DiscoveryAnswer] = []
         now = datetime.now(UTC)
@@ -612,37 +619,37 @@ class ProfileDiscoveryService:
         return answers
 
     def _seed_review_answers_from_structured_profile(self, profile: PersonaProfile) -> list[tuple[DiscoveryDimension, str]]:
-        hard_rules = profile.hard_rules or {}
-        financial = hard_rules.get("financial_objectives", {})
-        risk = hard_rules.get("risk_guardrails", {})
-        constraints = hard_rules.get("investment_constraints", {})
-        interaction = hard_rules.get("interaction_model", {})
+        financial = profile.financial_objectives
+        risk = profile.risk_boundaries
+        constraints = profile.investment_constraints
+        background = profile.account_background
+        traits = profile.persona_traits
         return [
-            (DiscoveryDimension.OBJECTIVE, financial.get("objective") or profile.mandate_summary),
-            (DiscoveryDimension.LIQUIDITY, financial.get("liquidity_needs") or "No new liquidity changes noted."),
-            (DiscoveryDimension.HORIZON, financial.get("time_horizon") or "Existing horizon unchanged."),
-            (DiscoveryDimension.RISK_RESPONSE, risk.get("stress_response") or f"Current risk budget is {profile.risk_budget.value}."),
-            (DiscoveryDimension.LOSS_THRESHOLD, risk.get("max_drawdown_signal") or "Existing loss threshold unchanged."),
-            (
-                DiscoveryDimension.CONSTRAINTS,
-                constraints.get("constraints") or self._serialize_list(profile.forbidden_symbols) or "Existing constraints unchanged.",
-            ),
-            (DiscoveryDimension.CONCENTRATION, constraints.get("concentration") or "Existing concentration guidance unchanged."),
-            (DiscoveryDimension.INTERACTION_STYLE, interaction.get("interaction_style") or "Keep existing interaction style."),
-            (DiscoveryDimension.REVIEW_CADENCE, interaction.get("review_cadence") or "Keep existing review cadence."),
+            (DiscoveryDimension.TARGET_ANNUAL_RETURN, self._stringify(financial.target_annual_return_pct)),
+            (DiscoveryDimension.INVESTMENT_HORIZON, self._stringify(financial.investment_horizon_years)),
+            (DiscoveryDimension.ANNUAL_LIQUIDITY_NEED, self._stringify(financial.annual_liquidity_need)),
+            (DiscoveryDimension.LIQUIDITY_FREQUENCY, financial.liquidity_frequency.value if financial.liquidity_frequency else ""),
+            (DiscoveryDimension.MAX_DRAWDOWN_LIMIT, self._stringify(risk.max_drawdown_limit_pct)),
+            (DiscoveryDimension.MAX_ANNUAL_VOLATILITY, self._stringify(risk.max_annual_volatility_pct)),
+            (DiscoveryDimension.MAX_LEVERAGE_RATIO, self._stringify(risk.max_leverage_ratio)),
+            (DiscoveryDimension.SINGLE_ASSET_CAP, self._stringify(risk.single_asset_cap_pct)),
+            (DiscoveryDimension.BLOCKED_SECTORS, self._serialize_list(constraints.blocked_sectors) or "none"),
+            (DiscoveryDimension.BLOCKED_TICKERS, self._serialize_list(constraints.blocked_tickers) or "none"),
+            (DiscoveryDimension.BASE_CURRENCY, constraints.base_currency or ""),
+            (DiscoveryDimension.TAX_RESIDENCY, constraints.tax_residency or ""),
+            (DiscoveryDimension.ACCOUNT_ENTITY_TYPE, background.account_entity_type.value if background.account_entity_type else ""),
+            (DiscoveryDimension.AUM_ALLOCATED, self._stringify(background.aum_allocated)),
+            (DiscoveryDimension.EXECUTION_MODE, background.execution_mode.value if background.execution_mode else ""),
+            (DiscoveryDimension.FINANCIAL_LITERACY, traits.financial_literacy or ""),
+            (DiscoveryDimension.WEALTH_ORIGIN_DNA, traits.wealth_origin_dna or ""),
+            (DiscoveryDimension.BEHAVIORAL_RISK_PROFILE, traits.behavioral_risk_profile or ""),
         ]
-
-    def _seed_background_summary(self, profile: PersonaProfile, *, payload: ReviewProfileRequest) -> str:
-        memories = profile.long_term_memories or []
-        memory_text = ""
-        if memories:
-            summaries = [item.get("summary") for item in memories if item.get("summary")]
-            memory_text = " ".join(summaries[:2])
-        pieces = [piece for piece in [memory_text, payload.notes, f"Review trigger: {payload.trigger}."] if piece]
-        return " ".join(pieces)
 
     def _serialize_list(self, items: list[str]) -> str:
         return ", ".join(items)
+
+    def _stringify(self, value: Any) -> str:
+        return "" if value in (None, "") else str(value)
 
     def _select_active_profile(self, *, owner_id: str, profile_id: str | None) -> PersonaProfile | None:
         if profile_id is not None:
@@ -788,15 +795,35 @@ class ProfileDiscoveryService:
 
     def _build_draft(self, session: DiscoverySession, readiness: DraftReadinessAssessment) -> ProfileDraft:
         answer_map = {answer.dimension: answer.answer_text for answer in session.answers}
+        normalized_map = {
+            state.dimension: state.normalized_value
+            for state in session.dimension_states
+            if state.normalized_value is not None
+        }
         preferred_name = session.preferred_profile_name or "Primary Risk Profile"
         profile_id = session.source_profile_id or self._slugify_profile_id(preferred_name, session.owner_id)
-        risk_budget = self._derive_risk_budget(answer_map)
-        mandate_summary = self._build_mandate_summary(answer_map, risk_budget)
-        forbidden_symbols = self._extract_forbidden_symbols(answer_map)
-        hard_rules = self._build_hard_rules(answer_map, risk_budget)
-        contextual_rules = self._build_contextual_rules(answer_map)
-        long_term_memories = self._build_long_term_memories(answer_map)
-        short_term_memories = self._build_short_term_memories(answer_map)
+        financial_objectives = self._build_financial_objectives(normalized_map)
+        risk_boundaries = self._build_risk_boundaries(normalized_map)
+        investment_constraints = self._build_investment_constraints(normalized_map)
+        account_background = self._build_account_background(normalized_map)
+        persona_traits = self._build_persona_traits(normalized_map, answer_map)
+        risk_budget = self._derive_risk_budget(risk_boundaries)
+        mandate_summary = self._build_mandate_summary(
+            financial_objectives,
+            risk_boundaries,
+            investment_constraints,
+            account_background,
+            risk_budget,
+        )
+        contextual_rules = self._build_contextual_rules(
+            answer_map,
+            financial_objectives,
+            risk_boundaries,
+            investment_constraints,
+            account_background,
+        )
+        long_term_memories = self._build_long_term_memories(answer_map, persona_traits)
+        short_term_memories = self._build_short_term_memories(answer_map, financial_objectives)
         persona_evidence = build_persona_evidence_from_answers([answer.model_dump(mode="json") for answer in session.answers])
         suggested_profile = PersonaProfile(
             profile_id=profile_id,
@@ -805,11 +832,14 @@ class ProfileDiscoveryService:
             status=ProfileLifecycleStatus.PENDING_USER_CONFIRMATION,
             display_name=preferred_name,
             mandate_summary=mandate_summary,
-            persona_style=self._derive_persona_style(risk_budget, answer_map),
+            persona_style=self._derive_persona_style(risk_budget, financial_objectives, account_background),
             created_from="guided_discovery" if session.workflow_kind is DiscoveryWorkflowKind.ADD else "persona_update",
             risk_budget=risk_budget,
-            forbidden_symbols=forbidden_symbols,
-            hard_rules=hard_rules,
+            financial_objectives=financial_objectives,
+            risk_boundaries=risk_boundaries,
+            investment_constraints=investment_constraints,
+            account_background=account_background,
+            persona_traits=persona_traits,
             contextual_rules=[item.model_dump(mode="json") for item in contextual_rules],
             long_term_memories=[item.model_dump(mode="json") for item in long_term_memories],
             short_term_memories=short_term_memories,
@@ -821,115 +851,249 @@ class ProfileDiscoveryService:
             owner_id=session.owner_id,
             readiness=readiness,
             suggested_profile=suggested_profile,
-            hard_rules=hard_rules,
             contextual_rules=contextual_rules,
             narrative_memories=long_term_memories,
         )
 
-    def _build_hard_rules(self, answer_map: dict[DiscoveryDimension, str], risk_budget: RiskBudget) -> dict[str, Any]:
-        return {
-            "financial_objectives": {
-                "objective": answer_map.get(DiscoveryDimension.OBJECTIVE),
-                "time_horizon": answer_map.get(DiscoveryDimension.HORIZON),
-                "liquidity_needs": answer_map.get(DiscoveryDimension.LIQUIDITY),
-            },
-            "risk_guardrails": {
-                "risk_budget": risk_budget.value,
-                "max_drawdown_signal": answer_map.get(DiscoveryDimension.LOSS_THRESHOLD),
-                "stress_response": answer_map.get(DiscoveryDimension.RISK_RESPONSE),
-            },
-            "investment_constraints": {
-                "constraints": answer_map.get(DiscoveryDimension.CONSTRAINTS),
-                "concentration": answer_map.get(DiscoveryDimension.CONCENTRATION),
-            },
-            "interaction_model": {
-                "interaction_style": answer_map.get(DiscoveryDimension.INTERACTION_STYLE),
-                "review_cadence": answer_map.get(DiscoveryDimension.REVIEW_CADENCE),
-            },
-        }
+    def _build_financial_objectives(self, normalized_map: dict[DiscoveryDimension, Any]) -> FinancialObjectives:
+        frequency = normalized_map.get(DiscoveryDimension.LIQUIDITY_FREQUENCY)
+        return FinancialObjectives(
+            target_annual_return_pct=self._to_decimal(normalized_map.get(DiscoveryDimension.TARGET_ANNUAL_RETURN)),
+            investment_horizon_years=self._to_int(normalized_map.get(DiscoveryDimension.INVESTMENT_HORIZON)),
+            annual_liquidity_need=self._to_decimal(normalized_map.get(DiscoveryDimension.ANNUAL_LIQUIDITY_NEED)),
+            liquidity_frequency=LiquidityFrequency(str(frequency)) if frequency else None,
+        )
 
-    def _build_contextual_rules(self, answer_map: dict[DiscoveryDimension, str]) -> list[ContextualRuleCandidate]:
+    def _build_risk_boundaries(self, normalized_map: dict[DiscoveryDimension, Any]) -> RiskBoundaries:
+        return RiskBoundaries(
+            max_drawdown_limit_pct=self._to_decimal(normalized_map.get(DiscoveryDimension.MAX_DRAWDOWN_LIMIT)),
+            max_annual_volatility_pct=self._to_decimal(normalized_map.get(DiscoveryDimension.MAX_ANNUAL_VOLATILITY)),
+            max_leverage_ratio=self._to_decimal(normalized_map.get(DiscoveryDimension.MAX_LEVERAGE_RATIO)),
+            single_asset_cap_pct=self._to_decimal(normalized_map.get(DiscoveryDimension.SINGLE_ASSET_CAP)),
+        )
+
+    def _build_investment_constraints(self, normalized_map: dict[DiscoveryDimension, Any]) -> InvestmentConstraints:
+        return InvestmentConstraints(
+            blocked_sectors=list(normalized_map.get(DiscoveryDimension.BLOCKED_SECTORS) or []),
+            blocked_tickers=list(normalized_map.get(DiscoveryDimension.BLOCKED_TICKERS) or []),
+            base_currency=self._coerce_text(normalized_map.get(DiscoveryDimension.BASE_CURRENCY), uppercase=True),
+            tax_residency=self._coerce_text(normalized_map.get(DiscoveryDimension.TAX_RESIDENCY)),
+        )
+
+    def _build_account_background(self, normalized_map: dict[DiscoveryDimension, Any]) -> AccountBackground:
+        entity_type = normalized_map.get(DiscoveryDimension.ACCOUNT_ENTITY_TYPE)
+        execution_mode = normalized_map.get(DiscoveryDimension.EXECUTION_MODE)
+        return AccountBackground(
+            account_entity_type=AccountEntityType(str(entity_type)) if entity_type else None,
+            aum_allocated=self._to_decimal(normalized_map.get(DiscoveryDimension.AUM_ALLOCATED)),
+            execution_mode=ExecutionMode(str(execution_mode)) if execution_mode else None,
+        )
+
+    def _build_persona_traits(
+        self,
+        normalized_map: dict[DiscoveryDimension, Any],
+        answer_map: dict[DiscoveryDimension, str],
+    ) -> PersonaTraits:
+        return PersonaTraits(
+            financial_literacy=self._coerce_text(
+                normalized_map.get(DiscoveryDimension.FINANCIAL_LITERACY) or answer_map.get(DiscoveryDimension.FINANCIAL_LITERACY)
+            ),
+            wealth_origin_dna=self._coerce_text(
+                normalized_map.get(DiscoveryDimension.WEALTH_ORIGIN_DNA) or answer_map.get(DiscoveryDimension.WEALTH_ORIGIN_DNA)
+            ),
+            behavioral_risk_profile=self._coerce_text(
+                normalized_map.get(DiscoveryDimension.BEHAVIORAL_RISK_PROFILE) or answer_map.get(DiscoveryDimension.BEHAVIORAL_RISK_PROFILE)
+            ),
+        )
+
+    def _build_contextual_rules(
+        self,
+        answer_map: dict[DiscoveryDimension, str],
+        financial_objectives: FinancialObjectives,
+        risk_boundaries: RiskBoundaries,
+        investment_constraints: InvestmentConstraints,
+        account_background: AccountBackground,
+    ) -> list[ContextualRuleCandidate]:
         rules: list[ContextualRuleCandidate] = []
-        liquidity = answer_map.get(DiscoveryDimension.LIQUIDITY, "")
-        risk = answer_map.get(DiscoveryDimension.RISK_RESPONSE, "")
-        concentration = answer_map.get(DiscoveryDimension.CONCENTRATION, "")
-        if liquidity and re.search(r"\b(cash|need|expense|reserve|money)\b", liquidity, re.IGNORECASE):
+        liquidity = answer_map.get(DiscoveryDimension.ANNUAL_LIQUIDITY_NEED, "")
+        if financial_objectives.annual_liquidity_need and financial_objectives.annual_liquidity_need > 0:
             rules.append(
                 ContextualRuleCandidate(
-                    rule_text="Prefer preserving liquid reserve before adding new high-volatility exposure when near-term cash needs exist.",
-                    reason="Derived from stated liquidity needs.",
+                    rule_text="Preserve liquidity reserves before increasing portfolio risk when recurring cash withdrawals are expected.",
+                    reason="Derived from annual liquidity requirements.",
                 )
             )
-        if risk and re.search(r"\b(add|hold|reduce|sell)\b", risk, re.IGNORECASE):
+        if risk_boundaries.max_leverage_ratio == Decimal("0"):
             rules.append(
                 ContextualRuleCandidate(
-                    rule_text="During drawdowns, interpret user stress response before recommending more risk.",
-                    reason="Derived from stated stress behavior.",
+                    rule_text="Do not use leverage in portfolio construction or execution for this mandate.",
+                    reason="Derived from the leverage boundary.",
                 )
             )
-        if concentration:
+        if risk_boundaries.single_asset_cap_pct is not None:
             rules.append(
                 ContextualRuleCandidate(
-                    rule_text="Keep concentration guidance visible when a single position or theme grows quickly.",
-                    reason="Derived from concentration preferences.",
+                    rule_text="Continuously monitor single-asset concentration against the approved cap.",
+                    reason="Derived from the single-asset concentration boundary.",
+                )
+            )
+        if investment_constraints.blocked_sectors or investment_constraints.blocked_tickers:
+            rules.append(
+                ContextualRuleCandidate(
+                    rule_text="Treat blocked sectors and blocked tickers as non-overridable filter rules unless the profile itself is updated.",
+                    reason="Derived from explicit investment constraints.",
+                )
+            )
+        if account_background.execution_mode is ExecutionMode.ADVISORY:
+            rules.append(
+                ContextualRuleCandidate(
+                    rule_text="Require human confirmation before sending any trade for execution.",
+                    reason="Derived from advisory execution mode.",
+                )
+            )
+        if liquidity and re.search(r"\b(next|soon|month|quarter|year)\b", liquidity, re.IGNORECASE):
+            rules.append(
+                ContextualRuleCandidate(
+                    rule_text="Keep short-horizon liquidity events visible in portfolio planning until they pass.",
+                    reason="Derived from time-sensitive liquidity wording.",
                 )
             )
         return rules
 
-    def _build_long_term_memories(self, answer_map: dict[DiscoveryDimension, str]) -> list[NarrativeMemoryCandidate]:
+    def _build_long_term_memories(
+        self,
+        answer_map: dict[DiscoveryDimension, str],
+        persona_traits: PersonaTraits,
+    ) -> list[NarrativeMemoryCandidate]:
         items: list[NarrativeMemoryCandidate] = []
         for dimension, theme in (
-            (DiscoveryDimension.BACKGROUND, "background_context"),
-            (DiscoveryDimension.RISK_RESPONSE, "risk_behavior"),
-            (DiscoveryDimension.INTERACTION_STYLE, "interaction_preference"),
+            (DiscoveryDimension.WEALTH_ORIGIN_DNA, "wealth_origin_dna"),
+            (DiscoveryDimension.BEHAVIORAL_RISK_PROFILE, "behavioral_risk_profile"),
+            (DiscoveryDimension.FINANCIAL_LITERACY, "financial_literacy"),
         ):
             text = answer_map.get(dimension)
             if text and len(text.split()) >= 8:
                 items.append(NarrativeMemoryCandidate(summary=text, theme=theme, source_dimension=dimension))
+        for item in profile_long_memory_candidates_from_traits(persona_traits):
+            if all(existing.summary != item.summary for existing in items):
+                items.append(item)
         return items
 
-    def _build_short_term_memories(self, answer_map: dict[DiscoveryDimension, str]) -> list[dict[str, str]]:
+    def _build_short_term_memories(
+        self,
+        answer_map: dict[DiscoveryDimension, str],
+        financial_objectives: FinancialObjectives,
+    ) -> list[dict[str, str]]:
         items: list[dict[str, str]] = []
-        liquidity = answer_map.get(DiscoveryDimension.LIQUIDITY)
+        liquidity = answer_map.get(DiscoveryDimension.ANNUAL_LIQUIDITY_NEED)
         if liquidity and re.search(r"\b(within|month|months|week|weeks|soon|upcoming|next)\b", liquidity, re.IGNORECASE):
-            items.append({"theme": "near_term_liquidity", "summary": liquidity, "source_dimension": DiscoveryDimension.LIQUIDITY.value})
-        background = answer_map.get(DiscoveryDimension.BACKGROUND)
-        if background and re.search(r"\b(review trigger|this quarter|this month|recent|currently|right now)\b", background, re.IGNORECASE):
-            items.append({"theme": "current_context", "summary": background, "source_dimension": DiscoveryDimension.BACKGROUND.value})
+            items.append(
+                {
+                    "theme": "near_term_liquidity",
+                    "summary": liquidity,
+                    "source_dimension": DiscoveryDimension.ANNUAL_LIQUIDITY_NEED.value,
+                }
+            )
+        behavioral = answer_map.get(DiscoveryDimension.BEHAVIORAL_RISK_PROFILE)
+        if behavioral and re.search(r"\b(recent|lately|right now|currently|last week|last month|two weeks)\b", behavioral, re.IGNORECASE):
+            items.append(
+                {
+                    "theme": "recent_market_emotion",
+                    "summary": behavioral,
+                    "source_dimension": DiscoveryDimension.BEHAVIORAL_RISK_PROFILE.value,
+                }
+            )
+        if financial_objectives.liquidity_frequency in {LiquidityFrequency.MONTHLY, LiquidityFrequency.QUARTERLY}:
+            items.append(
+                {
+                    "theme": "recurring_cash_flow",
+                    "summary": f"Recurring liquidity cadence is {financial_objectives.liquidity_frequency.value}.",
+                    "source_dimension": DiscoveryDimension.LIQUIDITY_FREQUENCY.value,
+                }
+            )
         return items
 
-    def _derive_risk_budget(self, answer_map: dict[DiscoveryDimension, str]) -> RiskBudget:
-        risk_response = (answer_map.get(DiscoveryDimension.RISK_RESPONSE) or "").lower()
-        loss_threshold = (answer_map.get(DiscoveryDimension.LOSS_THRESHOLD) or "").lower()
-        if re.search(r"\b(add|upside|aggressive|growth)\b", risk_response) and not re.search(r"\bscared|panic|sleep|uneasy\b", risk_response):
+    def _derive_risk_budget(self, risk_boundaries: RiskBoundaries) -> RiskBudget:
+        conservative_signals = 0
+        aggressive_signals = 0
+        if risk_boundaries.max_drawdown_limit_pct is not None:
+            if risk_boundaries.max_drawdown_limit_pct <= Decimal("10"):
+                conservative_signals += 1
+            elif risk_boundaries.max_drawdown_limit_pct >= Decimal("20"):
+                aggressive_signals += 1
+        if risk_boundaries.max_annual_volatility_pct is not None:
+            if risk_boundaries.max_annual_volatility_pct <= Decimal("12"):
+                conservative_signals += 1
+            elif risk_boundaries.max_annual_volatility_pct >= Decimal("25"):
+                aggressive_signals += 1
+        if risk_boundaries.max_leverage_ratio is not None:
+            if risk_boundaries.max_leverage_ratio == Decimal("0"):
+                conservative_signals += 1
+            elif risk_boundaries.max_leverage_ratio > Decimal("1"):
+                aggressive_signals += 1
+        if aggressive_signals >= 2:
             return RiskBudget.HIGH
-        if re.search(r"\b(5|6|7|8)\b", loss_threshold) or re.search(r"\b(conservative|reduce|sell|panic|sleep)\b", risk_response):
+        if conservative_signals >= 2:
             return RiskBudget.LOW
         return RiskBudget.MEDIUM
 
-    def _derive_persona_style(self, risk_budget: RiskBudget, answer_map: dict[DiscoveryDimension, str]) -> str:
-        objective = (answer_map.get(DiscoveryDimension.OBJECTIVE) or "").lower()
-        if "income" in objective:
-            return "income oriented"
+    def _derive_persona_style(
+        self,
+        risk_budget: RiskBudget,
+        financial_objectives: FinancialObjectives,
+        account_background: AccountBackground,
+    ) -> str:
+        if financial_objectives.annual_liquidity_need and financial_objectives.annual_liquidity_need > 0:
+            return "cash-flow aware"
+        if account_background.execution_mode is ExecutionMode.DISCRETIONARY:
+            return "delegated systematic"
         return {
             RiskBudget.LOW: "capital preservation",
             RiskBudget.MEDIUM: "balanced",
             RiskBudget.HIGH: "growth oriented",
         }[risk_budget]
 
-    def _build_mandate_summary(self, answer_map: dict[DiscoveryDimension, str], risk_budget: RiskBudget) -> str:
-        objective = answer_map.get(DiscoveryDimension.OBJECTIVE) or "Manage the portfolio under a clear user-defined mandate."
-        horizon = answer_map.get(DiscoveryDimension.HORIZON) or "unspecified horizon"
-        liquidity = answer_map.get(DiscoveryDimension.LIQUIDITY) or "no explicit liquidity note"
-        return f"{objective} Operate with {risk_budget.value} risk budget, horizon {horizon}, and liquidity context: {liquidity}."
+    def _build_mandate_summary(
+        self,
+        financial_objectives: FinancialObjectives,
+        risk_boundaries: RiskBoundaries,
+        investment_constraints: InvestmentConstraints,
+        account_background: AccountBackground,
+        risk_budget: RiskBudget,
+    ) -> str:
+        target = self._stringify(financial_objectives.target_annual_return_pct) or "unspecified"
+        horizon = self._stringify(financial_objectives.investment_horizon_years) or "unspecified"
+        drawdown = self._stringify(risk_boundaries.max_drawdown_limit_pct) or "unspecified"
+        currency = investment_constraints.base_currency or "portfolio base currency not set"
+        execution_mode = account_background.execution_mode.value if account_background.execution_mode else "execution mode not set"
+        return (
+            f"Target {target}% annual return over {horizon} years with {risk_budget.value} risk budget, "
+            f"max drawdown limit {drawdown}%, base currency {currency}, and execution mode {execution_mode}."
+        )
 
-    def _extract_forbidden_symbols(self, answer_map: dict[DiscoveryDimension, str]) -> list[str]:
-        constraints = answer_map.get(DiscoveryDimension.CONSTRAINTS, "")
-        if not constraints:
-            return []
-        if not re.search(r"\b(avoid|don't|do not|won't|hate)\b", constraints, re.IGNORECASE):
-            return []
-        return sorted({token.upper() for token in re.findall(r"\b[A-Z]{1,5}\b", constraints)})
+    def _to_decimal(self, value: Any) -> Decimal | None:
+        if value in (None, ""):
+            return None
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError):
+            return None
+
+    def _to_int(self, value: Any) -> int | None:
+        if value in (None, ""):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _coerce_text(self, value: Any, *, uppercase: bool = False) -> str | None:
+        if value in (None, ""):
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        return text.upper() if uppercase else text
 
     def _slugify_profile_id(self, preferred_name: str, owner_id: str) -> str:
         base = re.sub(r"[^a-z0-9]+", "-", preferred_name.lower()).strip("-") or "profile"
@@ -955,6 +1119,7 @@ class ProfileDiscoveryService:
             state.last_updated_at = None
             state.extracted_facts = []
             state.pending_gaps = []
+            state.normalized_value = None
 
     def _build_update_trigger(self, update_choice: PersonaUpdateChoice | None, target_dimensions: list[DiscoveryDimension]) -> str:
         if update_choice is not None:
@@ -1027,3 +1192,15 @@ class ProfileDiscoveryService:
             raise
         finally:
             session.close()
+
+
+def profile_long_memory_candidates_from_traits(persona_traits: PersonaTraits) -> list[NarrativeMemoryCandidate]:
+    items: list[NarrativeMemoryCandidate] = []
+    for dimension, theme, text in (
+        (DiscoveryDimension.FINANCIAL_LITERACY, "financial_literacy", persona_traits.financial_literacy),
+        (DiscoveryDimension.WEALTH_ORIGIN_DNA, "wealth_origin_dna", persona_traits.wealth_origin_dna),
+        (DiscoveryDimension.BEHAVIORAL_RISK_PROFILE, "behavioral_risk_profile", persona_traits.behavioral_risk_profile),
+    ):
+        if text and len(text.split()) >= 10:
+            items.append(NarrativeMemoryCandidate(summary=text, theme=theme, source_dimension=dimension))
+    return items

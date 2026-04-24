@@ -27,10 +27,10 @@ Produce an analysis packet that covers:
    - one concise summary paragraph
 
 2. **Four-dimensional evaluation**
-   - financial objectives
-   - risk posture
-   - constraints and concentration
-   - background and collaboration
+   - financial objectives and liquidity boundaries
+   - risk boundaries
+   - investment constraints and account foundation
+   - persona traits and behavioral boundaries
 
 3. **Memory distinction**
    - stable traits / long-lived context

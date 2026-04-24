@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -37,6 +37,24 @@ class ProfileVersionModel(Base):
     concentration_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     interaction_style_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     review_cadence_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_annual_return_pct: Mapped[float | None] = mapped_column(Numeric(18, 4), nullable=True)
+    investment_horizon_years: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    annual_liquidity_need: Mapped[float | None] = mapped_column(Numeric(18, 2), nullable=True)
+    liquidity_frequency: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    max_drawdown_limit_pct: Mapped[float | None] = mapped_column(Numeric(18, 4), nullable=True)
+    max_annual_volatility_pct: Mapped[float | None] = mapped_column(Numeric(18, 4), nullable=True)
+    max_leverage_ratio: Mapped[float | None] = mapped_column(Numeric(18, 4), nullable=True)
+    single_asset_cap_pct: Mapped[float | None] = mapped_column(Numeric(18, 4), nullable=True)
+    blocked_sectors: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    blocked_tickers: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    base_currency: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    tax_residency: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    account_entity_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    aum_allocated: Mapped[float | None] = mapped_column(Numeric(18, 2), nullable=True)
+    execution_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    financial_literacy_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    wealth_origin_dna_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    behavioral_risk_profile_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)

@@ -12,8 +12,10 @@ Core product docs for the narrowed FinKernel scope:
 
 - `docs/setup-and-run.md`
 - `docs/persona-profiles.md`
+- `docs/profile-schema-design.md`
 - `docs/persona-agent-workflow.md`
 - `docs/investment-conversation-routing.md`
+- `docs/future-module-development-rules.md`
 - `docs/upper-layer-agent-integration.md`
 - `docs/host-agent-runtime-integration.md`
 - `docs/troubleshooting.md`
@@ -21,3 +23,7 @@ Core product docs for the narrowed FinKernel scope:
 - `prompts/persona_assessment.md`
 
 FinKernel is intentionally focused on personal risk profile creation, review, and retrieval, with Docker-first local installation for the first release.
+
+Use `docs/future-module-development-rules.md` as the standing development
+contract for future modules such as News, Research, Trade, Notifications, and
+the managed orchestration entry.

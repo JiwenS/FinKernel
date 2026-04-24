@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -27,16 +28,24 @@ class DiscoveryPillar(str, Enum):
 
 
 class DiscoveryDimension(str, Enum):
-    OBJECTIVE = "objective"
-    LIQUIDITY = "liquidity"
-    HORIZON = "horizon"
-    RISK_RESPONSE = "risk_response"
-    LOSS_THRESHOLD = "loss_threshold"
-    CONSTRAINTS = "constraints"
-    CONCENTRATION = "concentration"
-    BACKGROUND = "background"
-    INTERACTION_STYLE = "interaction_style"
-    REVIEW_CADENCE = "review_cadence"
+    TARGET_ANNUAL_RETURN = "target_annual_return"
+    INVESTMENT_HORIZON = "investment_horizon"
+    ANNUAL_LIQUIDITY_NEED = "annual_liquidity_need"
+    LIQUIDITY_FREQUENCY = "liquidity_frequency"
+    MAX_DRAWDOWN_LIMIT = "max_drawdown_limit"
+    MAX_ANNUAL_VOLATILITY = "max_annual_volatility"
+    MAX_LEVERAGE_RATIO = "max_leverage_ratio"
+    SINGLE_ASSET_CAP = "single_asset_cap"
+    BLOCKED_SECTORS = "blocked_sectors"
+    BLOCKED_TICKERS = "blocked_tickers"
+    BASE_CURRENCY = "base_currency"
+    TAX_RESIDENCY = "tax_residency"
+    ACCOUNT_ENTITY_TYPE = "account_entity_type"
+    AUM_ALLOCATED = "aum_allocated"
+    EXECUTION_MODE = "execution_mode"
+    FINANCIAL_LITERACY = "financial_literacy"
+    WEALTH_ORIGIN_DNA = "wealth_origin_dna"
+    BEHAVIORAL_RISK_PROFILE = "behavioral_risk_profile"
 
 
 class DiscoveryQuestionType(str, Enum):
@@ -60,6 +69,7 @@ class ExpectedAnswerShape(str, Enum):
     CHOICE = "choice"
     DATE_OR_WINDOW = "date_or_window"
     MONEY_RANGE = "money_range"
+    LIST = "list"
 
 
 class DiscoveryQuestion(BaseModel):
@@ -101,6 +111,7 @@ class DimensionState(BaseModel):
     last_updated_at: datetime | None = None
     extracted_facts: list[str] = Field(default_factory=list)
     pending_gaps: list[str] = Field(default_factory=list)
+    normalized_value: Any | None = None
 
 
 class DraftReadinessAssessment(BaseModel):
@@ -111,13 +122,10 @@ class DraftReadinessAssessment(BaseModel):
 
 class PersonaUpdateChoice(str, Enum):
     FULL_REASSESSMENT = "full_reassessment"
-    OBJECTIVES_AND_HORIZON = "objectives_and_horizon"
-    LIQUIDITY_NEEDS = "liquidity_needs"
-    RISK_TOLERANCE = "risk_tolerance"
-    CONSTRAINTS_AND_EXCLUSIONS = "constraints_and_exclusions"
-    CONCENTRATION_LIMITS = "concentration_limits"
-    COMMUNICATION_PREFERENCES = "communication_preferences"
-    BACKGROUND_CONTEXT = "background_context"
+    FINANCIAL_OBJECTIVES = "financial_objectives"
+    RISK_BOUNDARIES = "risk_boundaries"
+    INVESTMENT_CONSTRAINTS = "investment_constraints"
+    ACCOUNT_FOUNDATION_AND_TRAITS = "account_foundation_and_traits"
     NO_CHANGES = "no_changes"
 
 
@@ -158,7 +166,6 @@ class ProfileDraft(BaseModel):
     owner_id: str
     readiness: DraftReadinessAssessment
     suggested_profile: PersonaProfile
-    hard_rules: dict = Field(default_factory=dict)
     contextual_rules: list[ContextualRuleCandidate] = Field(default_factory=list)
     narrative_memories: list[NarrativeMemoryCandidate] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -177,7 +184,7 @@ class SubmitDiscoveryAnswerRequest(BaseModel):
 class ConfirmProfileDraftRequest(BaseModel):
     profile_id: str | None = None
     display_name: str | None = None
-    persona_markdown: str | None = None
+    persona_markdown: str = Field(min_length=1)
 
 
 class ReviewProfileRequest(BaseModel):

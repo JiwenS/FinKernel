@@ -1,73 +1,80 @@
 ---
-name: finkernel-agent
-description: "Route onboarding, risk-profile review, and persona-authoring conversations into FinKernel MCP-backed workflows."
+name: finkernel-profile
+description: "Build, review, and maintain a user's FinKernel profile through MCP-backed persona workflows."
 version: "2.0.0"
 user-invocable: true
 ---
 
-# FinKernel Agent Skill
+# FinKernel Profile Skill
+
+## Trigger Conditions
+
+Use this skill when the user is trying to do any of the following:
+
+- /FinKernel Profile
+- build a financial profile 
+- continue an incomplete profile
+- refresh or revise an existing profile
+- correct profile conclusions
+- append new profile memory
+- request profile-aware investment guidance
+
+Compatible hosts:
+
+- Claude Code
+- OpenClaw
+- Hermes
+- Codex
+
+Host-visible entrypoint:
+
+- `/FinKernel Profile`
 
 ## Purpose
 
-This skill is the top-level execution surface for host agents integrating FinKernel.
+This skill is the primary execution surface for building and maintaining a
+financial profile.
 
-FinKernel stores onboarding state, profile evidence, persona markdown, version history,
-and long-term / short-term memory for a user's personal risk profile.
+FinKernel stores:
 
-Current delivery scope: Phase 1 is risk-profile work only. Use this skill to
-complete onboarding, retrieve or revise the active profile, maintain persona
-artifacts, and capture profile memory before any broader investment workflow.
+- onboarding state
+- structured profile boundaries
+- persona evidence
+- persona markdown
+- version history
+- long-term memory
+- short-term memory
 
-The agent using this skill is responsible for:
-
-1. routing profile-aware investment conversations into FinKernel first
-2. checking onboarding state before giving profile-scoped guidance
-3. reading the right profile context before answering
-4. maintaining persona markdown as the canonical human-readable artifact
-5. using review and memory tools when new evidence changes the profile
-
-## Core operating rule
-
-If the user is implicitly asking for profile-aware investment guidance, do **not**
-start with generic web-style investment advice.
-
-First route through FinKernel:
-
-1. check onboarding / active profile state
-2. resolve the active profile
-3. read profile-aware context
-4. only then give profile-scoped guidance
-
-Use general market research only **after** FinKernel context is loaded and only when
-fresh external facts materially affect the answer.
-
-## Tool routing
+## Tool Usage Rules
 
 ### Primary orchestration
 
 - MCP `assess_persona`
 
-Use `assess_persona` as the default single entrypoint for
-profile-building conversations. It should tell the host whether:
+`assess_persona` is the default single entrypoint for profile-building
+conversations. It decides whether FinKernel should:
 
-1. there is no active persona yet and FinKernel should add one from scratch
-2. an active persona exists but still needs an update pass to become complete
-3. the active persona is complete and the user should choose whether to reassess or update a section
-4. a draft is ready for persona writing + confirmation
-5. no changes were requested and the current active persona remains in force
+1. add a persona from scratch
+2. continue an incomplete persona
+3. ask the user to choose a section to update
+4. move into draft confirmation
+5. keep the current active persona unchanged
 
-### Onboarding / profile selection
+### Discovery and confirmation tools
 
-- MCP `get_profile_onboarding_status`
-- MCP `list_profiles`
 - MCP `start_profile_discovery`
 - MCP `get_next_profile_question`
 - MCP `submit_profile_discovery_answer`
 - MCP `generate_profile_draft`
 - MCP `confirm_profile_draft`
 
+Use these only when the host is intentionally operating at the lower-level
+workflow layer. For normal profile conversations, prefer `assess_persona`.
+
 ### Read profile context
 
+- MCP `get_profile_onboarding_status`
+- MCP `list_profiles`
 - MCP `get_profile`
 - MCP `get_profile_persona_sources`
 - MCP `get_profile_persona_markdown`
@@ -76,7 +83,7 @@ profile-building conversations. It should tell the host whether:
 - MCP `search_profile_memory`
 - MCP `distill_profile_memory`
 
-### Write profile artifacts
+### Write or revise profile artifacts
 
 - MCP `save_profile_persona_markdown`
 - MCP `append_profile_memory`
@@ -90,33 +97,112 @@ profile-building conversations. It should tell the host whether:
 - `prompts/persona_merger.md`
 - `prompts/persona_correction.md`
 
-## Main routing flow
+## Main Flow
 
-1. For profile-building or profile-maintenance requests, call `assess_persona`.
-2. If it returns `question_pending`:
-   - ask the returned question
-   - submit the answer with `submit_profile_discovery_answer`
-   - call `assess_persona` again
-   - keep going until every required section is covered
-3. If it returns `awaiting_update_selection`:
-   - present the returned `update_options`
-   - send the selected `update_choice` back through `assess_persona`
-4. If it returns `draft_ready`:
-   - read the draft and evidence
-   - write or refresh `persona_markdown`
-   - call `confirm_profile_draft`
-5. If it returns `persona_complete`:
-   - continue using the current active persona
-6. For profile-aware investment guidance, still preserve the strict read-first flow:
-   - `get_profile_onboarding_status`
-   - `get_profile`
-   - `get_profile_persona_markdown`
-   - `get_risk_profile_summary`
+### Step 1: Start with `assess_persona`
 
-## Execution rules
+For profile-building or profile-maintenance requests:
 
-1. Treat conversation evidence as the primary source of truth.
-2. Treat long-term and short-term memory as supporting context.
+1. call `assess_persona`
+2. inspect the returned `status`, `reason`, `notes`, and `next_question`
+3. continue only through the returned FinKernel state machine
+
+### Step 2: Handle question-driven construction
+
+If `assess_persona` returns `question_pending`:
+
+1. ask the returned question
+2. submit the answer with `submit_profile_discovery_answer`
+3. call `assess_persona` again
+4. repeat until the returned status changes
+
+### Step 3: Handle update selection
+
+If `assess_persona` returns `awaiting_update_selection`:
+
+1. present the returned `update_options`
+2. collect the user's section choice or `no_changes`
+3. send the selected `update_choice` back through `assess_persona`
+
+### Step 4: Draft authoring and confirmation
+
+If `assess_persona` returns `draft_ready`:
+
+1. read the draft and `persona_evidence`
+2. use `prompts/persona_analyzer.md` to structure the evidence
+3. use `prompts/persona_builder.md` to write or refresh `persona_markdown`
+4. confirm the draft with `confirm_profile_draft`
+
+### Step 5: Completed state
+
+If `assess_persona` returns `persona_complete`:
+
+- continue using the current active profile
+- do not restart discovery unless the user asks for a revision
+
+## Profile-Aware Guidance Flow
+
+If the user is asking for profile-aware investment guidance rather than profile
+construction itself, the minimum read-first sequence is:
+
+1. `get_profile_onboarding_status`
+2. `get_profile`
+3. `get_profile_persona_markdown`
+4. `get_risk_profile_summary`
+
+Only after this context is loaded should the host respond with profile-scoped
+guidance.
+
+## Append And Correct Flow
+
+### Append new memory
+
+Use `append_profile_memory` when the user is adding a new durable fact or a
+time-sensitive context item without requiring a full profile rebuild.
+
+Examples:
+
+- a new recurring liquidity event
+- a temporary travel or cash-flow constraint
+- a durable behavioral observation worth saving
+
+### Correct conclusions
+
+When the user says the current profile is wrong, incomplete, or outdated:
+
+1. read current profile context
+2. determine whether this is a local correction or a true reassessment
+3. if it changes structured boundaries or major traits, go back through `assess_persona`
+4. if it is only a markdown correction, use `prompts/persona_correction.md` and `save_profile_persona_markdown`
+
+### Merge updates into an existing persona
+
+When prior conclusions and new evidence both matter:
+
+1. read current markdown, evidence, and memory
+2. use `prompts/persona_merger.md`
+3. preserve still-valid conclusions
+4. explicitly reconcile contradictory evidence instead of silently overwriting it
+
+## Failure Handling
+
+If FinKernel tools are not available in the current session:
+
+1. stop immediately
+2. report that FinKernel MCP tools are not mounted in this session
+3. tell the user to verify the local MCP server registration and start a new host session
+
+Do not:
+
+- call `list_mcp_resources` as the primary diagnostic path
+- guess server names
+- scan repo files to continue the workflow
+- read local profile JSON or database state as a substitute for MCP tool access
+
+## Execution Rules
+
+1. Treat direct conversation evidence as the primary source of truth.
+2. Treat long-term and short-term memory as supporting context, not replacements for dialogue.
 3. Preserve time-sensitive constraints in prose and memory.
-4. Use merge/correction prompts whenever new evidence changes prior conclusions.
-5. Do not give generic ETF / T-bill / market advice first when profile-aware FinKernel routing is available.
+4. Keep structured boundaries and narrative traits separate.
+5. Use merge or correction prompts whenever new evidence changes prior conclusions.
