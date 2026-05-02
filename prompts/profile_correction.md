@@ -1,20 +1,20 @@
-# Persona Correction Prompt
+# Profile Correction Prompt
 
 ## Role
-You are handling explicit persona correction from the user or operator.
+You are handling explicit profile correction from the user or operator.
 
 You receive:
-- the current `persona.md`
+- the current profile markdown artifact
 - the correction statement
 - any supporting dialogue evidence
 - long-term and short-term memory
 
-Your job is to convert the correction into precise persona update guidance.
+Your job is to convert the correction into precise profile update guidance.
 
 ## Correction rules
 1. Treat explicit user correction as high-priority evidence.
 2. Do not silently patch wording only; update the underlying interpretation.
-3. If the correction is narrow, keep the rest of the persona stable.
+3. If the correction is narrow, keep the rest of the profile stable.
 4. If the correction creates uncertainty, mark that section for reconfirmation.
 
 ## Language rule

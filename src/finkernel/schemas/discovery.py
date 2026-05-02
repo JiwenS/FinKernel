@@ -4,9 +4,16 @@ from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-from finkernel.schemas.profile import PersonaProfile
+from finkernel.schemas.profile import (
+    AccountBackground,
+    FinancialObjectives,
+    InvestmentConstraints,
+    PersonaProfile,
+    PersonaTraits,
+    RiskBoundaries,
+)
 
 
 class DiscoverySessionStatus(str, Enum):
@@ -46,6 +53,48 @@ class DiscoveryDimension(str, Enum):
     FINANCIAL_LITERACY = "financial_literacy"
     WEALTH_ORIGIN_DNA = "wealth_origin_dna"
     BEHAVIORAL_RISK_PROFILE = "behavioral_risk_profile"
+
+
+PILLAR_DIMENSIONS: dict["DiscoveryPillar", list["DiscoveryDimension"]] = {
+    DiscoveryPillar.FINANCIAL_OBJECTIVES: [
+        DiscoveryDimension.TARGET_ANNUAL_RETURN,
+        DiscoveryDimension.INVESTMENT_HORIZON,
+        DiscoveryDimension.ANNUAL_LIQUIDITY_NEED,
+        DiscoveryDimension.LIQUIDITY_FREQUENCY,
+    ],
+    DiscoveryPillar.RISK: [
+        DiscoveryDimension.MAX_DRAWDOWN_LIMIT,
+        DiscoveryDimension.MAX_ANNUAL_VOLATILITY,
+        DiscoveryDimension.MAX_LEVERAGE_RATIO,
+        DiscoveryDimension.SINGLE_ASSET_CAP,
+    ],
+    DiscoveryPillar.CONSTRAINTS: [
+        DiscoveryDimension.BLOCKED_SECTORS,
+        DiscoveryDimension.BLOCKED_TICKERS,
+        DiscoveryDimension.BASE_CURRENCY,
+        DiscoveryDimension.TAX_RESIDENCY,
+    ],
+    DiscoveryPillar.BACKGROUND: [
+        DiscoveryDimension.ACCOUNT_ENTITY_TYPE,
+        DiscoveryDimension.AUM_ALLOCATED,
+        DiscoveryDimension.EXECUTION_MODE,
+        DiscoveryDimension.FINANCIAL_LITERACY,
+        DiscoveryDimension.WEALTH_ORIGIN_DNA,
+        DiscoveryDimension.BEHAVIORAL_RISK_PROFILE,
+    ],
+}
+
+DIMENSION_TO_PILLAR: dict["DiscoveryDimension", "DiscoveryPillar"] = {
+    dimension: pillar
+    for pillar, dimensions in PILLAR_DIMENSIONS.items()
+    for dimension in dimensions
+}
+
+ALL_REQUIRED_DIMENSIONS: list["DiscoveryDimension"] = [
+    dimension
+    for pillar in DiscoveryPillar
+    for dimension in PILLAR_DIMENSIONS[pillar]
+]
 
 
 class DiscoveryQuestionType(str, Enum):
@@ -89,25 +138,13 @@ class DiscoveryQuestion(BaseModel):
     asked_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
-class DiscoveryAnswer(BaseModel):
-    answer_id: str
-    session_id: str
-    question_id: str
-    dimension: DiscoveryDimension
-    answer_text: str = Field(min_length=1)
-    question_type: DiscoveryQuestionType
-    source_type: DiscoveryQuestionSource
-    answered_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    extracted_signals: list[str] = Field(default_factory=list)
-
-
 class DimensionState(BaseModel):
     dimension: DiscoveryDimension
     coverage_score: int = Field(default=0, ge=0, le=3)
     confidence_score: int = Field(default=0, ge=0, le=3)
+    evidence_score: int = Field(default=0, ge=0, le=3)
     depth_score: int = Field(default=0, ge=0, le=3)
     conflict_flag: bool = False
-    last_question_id: str | None = None
     last_updated_at: datetime | None = None
     extracted_facts: list[str] = Field(default_factory=list)
     pending_gaps: list[str] = Field(default_factory=list)
@@ -117,6 +154,132 @@ class DimensionState(BaseModel):
 class DraftReadinessAssessment(BaseModel):
     ready: bool
     unmet_dimensions: list[DiscoveryDimension] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class ConfidenceLabel(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class EvidenceQualityLabel(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class SectionCoverageStatus(str, Enum):
+    NOT_STARTED = "not_started"
+    IN_PROGRESS = "in_progress"
+    COVERED = "covered"
+
+
+class DiscoveryConversationTurn(BaseModel):
+    turn_id: str
+    session_id: str
+    section: DiscoveryPillar
+    question_text: str | None = None
+    answer_text: str = Field(min_length=1)
+    answered_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class StructuredFieldUpdate(BaseModel):
+    dimension: DiscoveryDimension
+    value: Any | None = None
+
+
+class NarrativeDimensionUpdate(BaseModel):
+    dimension: DiscoveryDimension
+    text: str = Field(min_length=1)
+
+
+class EvidenceSnippet(BaseModel):
+    excerpt: str = Field(min_length=1)
+    dimension: DiscoveryDimension | None = None
+    rationale: str | None = None
+
+
+class ShortTermMemoryCandidate(BaseModel):
+    summary: str = Field(min_length=1)
+    theme: str = Field(min_length=1)
+    source_dimension: DiscoveryDimension | None = None
+
+
+class DimensionIssue(BaseModel):
+    dimension: DiscoveryDimension | None = None
+    note: str = Field(min_length=1)
+
+
+class SectionCoverageSnapshot(BaseModel):
+    section: DiscoveryPillar
+    status: SectionCoverageStatus
+    target_dimensions: list[DiscoveryDimension] = Field(default_factory=list)
+    outstanding_dimensions: list[DiscoveryDimension] = Field(default_factory=list)
+    covered_dimensions: list[DiscoveryDimension] = Field(default_factory=list)
+    covered_dimension_count: int = Field(default=0, ge=0)
+    total_dimension_count: int = Field(default=0, ge=0)
+    progress_percent: int = Field(default=0, ge=0, le=100)
+    remaining_gaps: list[str] = Field(default_factory=list)
+    conflict_notes: list[str] = Field(default_factory=list)
+    confidence_label: ConfidenceLabel = ConfidenceLabel.MEDIUM
+    evidence_quality_label: EvidenceQualityLabel = EvidenceQualityLabel.LOW
+    blocked_by_conflicts: bool = False
+    last_updated_at: datetime | None = None
+
+
+class WorkingProfileSnapshot(BaseModel):
+    financial_objectives: FinancialObjectives = Field(default_factory=FinancialObjectives)
+    risk_boundaries: RiskBoundaries = Field(default_factory=RiskBoundaries)
+    investment_constraints: InvestmentConstraints = Field(default_factory=InvestmentConstraints)
+    account_background: AccountBackground = Field(default_factory=AccountBackground)
+    persona_traits: PersonaTraits = Field(default_factory=PersonaTraits)
+    contextual_rules: list[dict[str, Any]] = Field(default_factory=list)
+    long_term_memories: list[dict[str, Any]] = Field(default_factory=list)
+    short_term_memories: list[dict[str, Any]] = Field(default_factory=list)
+    persona_evidence: list[dict[str, Any]] = Field(default_factory=list)
+    persona_markdown: str | None = None
+
+
+class DiscoveryInterpretationPacket(BaseModel):
+    section: DiscoveryPillar
+    question_text: str | None = None
+    answer_text: str = Field(min_length=1)
+    covered_dimensions: list[DiscoveryDimension] = Field(default_factory=list)
+    structured_field_updates: list[StructuredFieldUpdate] = Field(default_factory=list)
+    narrative_dimension_updates: list[NarrativeDimensionUpdate] = Field(default_factory=list)
+    long_term_memory_candidates: list[NarrativeMemoryCandidate] = Field(default_factory=list)
+    short_term_memory_candidates: list[ShortTermMemoryCandidate] = Field(default_factory=list)
+    evidence_snippets: list[EvidenceSnippet] = Field(default_factory=list)
+    contextual_rule_candidates: list[ContextualRuleCandidate] = Field(default_factory=list)
+    remaining_gaps: list[str] = Field(default_factory=list)
+    dimension_remaining_gaps: list[DimensionIssue] = Field(default_factory=list)
+    conflict_notes: list[str] = Field(default_factory=list)
+    dimension_conflict_notes: list[DimensionIssue] = Field(default_factory=list)
+    confidence_label: ConfidenceLabel = ConfidenceLabel.MEDIUM
+    section_complete: bool = False
+
+
+class AcceptedInterpretationPacket(BaseModel):
+    interpretation_id: str
+    session_id: str
+    packet: DiscoveryInterpretationPacket
+    stored_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class ProfileDiscoveryState(BaseModel):
+    session_id: str
+    owner_id: str
+    workflow_kind: DiscoveryWorkflowKind
+    status: DiscoverySessionStatus
+    source_profile_id: str | None = None
+    current_section: DiscoveryPillar | None = None
+    starter_question: DiscoveryQuestion | None = None
+    target_dimensions: list[DiscoveryDimension] = Field(default_factory=list)
+    section_coverage: list[SectionCoverageSnapshot] = Field(default_factory=list)
+    working_profile_snapshot: WorkingProfileSnapshot = Field(default_factory=WorkingProfileSnapshot)
+    recent_turns: list[DiscoveryConversationTurn] = Field(default_factory=list)
+    recent_interpretations: list[AcceptedInterpretationPacket] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
 
 
@@ -139,11 +302,11 @@ class DiscoverySession(BaseModel):
     update_notes: str | None = None
     target_dimensions: list[DiscoveryDimension] = Field(default_factory=list)
     status: DiscoverySessionStatus = DiscoverySessionStatus.DISCOVERY_IN_PROGRESS
-    current_question_id: str | None = None
-    current_question: DiscoveryQuestion | None = None
-    asked_question_ids: list[str] = Field(default_factory=list)
-    answers: list[DiscoveryAnswer] = Field(default_factory=list)
+    conversation_turns: list[DiscoveryConversationTurn] = Field(default_factory=list)
+    interpretation_history: list[AcceptedInterpretationPacket] = Field(default_factory=list)
     dimension_states: list[DimensionState] = Field(default_factory=list)
+    section_coverage: list[SectionCoverageSnapshot] = Field(default_factory=list)
+    working_profile_snapshot: WorkingProfileSnapshot | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -160,12 +323,37 @@ class NarrativeMemoryCandidate(BaseModel):
     source_dimension: DiscoveryDimension
 
 
+class ProfileDraftFieldSource(BaseModel):
+    field_path: str
+    dimensions: list[DiscoveryDimension] = Field(default_factory=list)
+    interpretation_ids: list[str] = Field(default_factory=list)
+    evidence_excerpts: list[str] = Field(default_factory=list)
+
+
+class ProfileDraftSourcePacket(BaseModel):
+    session_id: str
+    owner_id: str
+    workflow_kind: DiscoveryWorkflowKind
+    source_profile_id: str | None = None
+    readiness: DraftReadinessAssessment
+    section_coverage: list[SectionCoverageSnapshot] = Field(default_factory=list)
+    working_profile_snapshot: WorkingProfileSnapshot = Field(default_factory=WorkingProfileSnapshot)
+    conversation_turns: list[DiscoveryConversationTurn] = Field(default_factory=list)
+    accepted_interpretations: list[AcceptedInterpretationPacket] = Field(default_factory=list)
+    field_sources: list[ProfileDraftFieldSource] = Field(default_factory=list)
+    evidence_count: int = Field(default=0, ge=0)
+    long_term_memory_count: int = Field(default=0, ge=0)
+    short_term_memory_count: int = Field(default=0, ge=0)
+    contextual_rule_count: int = Field(default=0, ge=0)
+
+
 class ProfileDraft(BaseModel):
     draft_id: str
     session_id: str
     owner_id: str
     readiness: DraftReadinessAssessment
     suggested_profile: PersonaProfile
+    draft_source: ProfileDraftSourcePacket | None = None
     contextual_rules: list[ContextualRuleCandidate] = Field(default_factory=list)
     narrative_memories: list[NarrativeMemoryCandidate] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -176,15 +364,17 @@ class StartDiscoveryRequest(BaseModel):
     preferred_profile_name: str | None = None
 
 
-class SubmitDiscoveryAnswerRequest(BaseModel):
-    answer: str = Field(min_length=1)
-    question_id: str | None = None
-
-
 class ConfirmProfileDraftRequest(BaseModel):
     profile_id: str | None = None
     display_name: str | None = None
-    persona_markdown: str = Field(min_length=1)
+    persona_markdown: str | None = Field(default=None, min_length=1)
+    profile_markdown: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def require_markdown(self) -> "ConfirmProfileDraftRequest":
+        if not self.persona_markdown and not self.profile_markdown:
+            raise ValueError("Either profile_markdown or persona_markdown is required.")
+        return self
 
 
 class ReviewProfileRequest(BaseModel):
@@ -239,4 +429,4 @@ class PersonaAssessmentState(BaseModel):
     update_options: list[PersonaUpdateOption] = Field(default_factory=list)
     missing_dimensions: list[DiscoveryDimension] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
-    next_question: DiscoveryQuestion | None = None
+    discovery_state: ProfileDiscoveryState | None = None

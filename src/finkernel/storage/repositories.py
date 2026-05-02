@@ -4,6 +4,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .models import (
+    DiscoveryConversationTurnModel,
+    DiscoveryInterpretationModel,
     DiscoverySessionModel,
     ProfileContextualRuleModel,
     ProfileDraftModel,
@@ -129,6 +131,32 @@ class DiscoverySessionRepository:
         if statuses:
             stmt = stmt.where(DiscoverySessionModel.status.in_(statuses))
         stmt = stmt.order_by(DiscoverySessionModel.updated_at.desc(), DiscoverySessionModel.created_at.desc())
+        return list(session.execute(stmt).scalars().all())
+
+
+class DiscoveryConversationTurnRepository:
+    def add(self, session: Session, model: DiscoveryConversationTurnModel) -> DiscoveryConversationTurnModel:
+        session.add(model)
+        session.flush()
+        return model
+
+    def list_for_session(self, session: Session, session_id: str) -> list[DiscoveryConversationTurnModel]:
+        stmt = select(DiscoveryConversationTurnModel).where(
+            DiscoveryConversationTurnModel.session_id == session_id
+        ).order_by(DiscoveryConversationTurnModel.answered_at.asc(), DiscoveryConversationTurnModel.created_at.asc())
+        return list(session.execute(stmt).scalars().all())
+
+
+class DiscoveryInterpretationRepository:
+    def add(self, session: Session, model: DiscoveryInterpretationModel) -> DiscoveryInterpretationModel:
+        session.add(model)
+        session.flush()
+        return model
+
+    def list_for_session(self, session: Session, session_id: str) -> list[DiscoveryInterpretationModel]:
+        stmt = select(DiscoveryInterpretationModel).where(
+            DiscoveryInterpretationModel.session_id == session_id
+        ).order_by(DiscoveryInterpretationModel.stored_at.asc(), DiscoveryInterpretationModel.created_at.asc())
         return list(session.execute(stmt).scalars().all())
 
 

@@ -55,7 +55,7 @@ flowchart LR
 
 | 框架 | 作用 | 典型输出 | 状态 |
 | --- | --- | --- | --- |
-| Financial Profile Engine | 建立持续演化的投资 persona，包含风险偏好、约束、记忆与可读 markdown | `assess_persona`、risk summary、版本化 persona 更新 | ![Live](https://img.shields.io/badge/Status-Live_Today-16A34A?style=flat-square) |
+| Financial Profile Engine | 建立持续演化的投资 profile，包含风险偏好、约束、记忆与可读 markdown | `assess_persona`、risk summary、版本化 profile 更新 | ![Live](https://img.shields.io/badge/Status-Live_Today-16A34A?style=flat-square) |
 | News Engine | 从多类金融来源采集并标准化新闻，供 AI 检索使用 | 市场事件聚合、来源感知摘要、观察列表 | ![Planned](https://img.shields.io/badge/Status-Planned-F59E0B?style=flat-square) |
 | Research Engine | 分析财报、新闻影响与价格行为 | 报告解读、事件影响分析、叙事与信号综合 | ![Planned](https://img.shields.io/badge/Status-Planned-F59E0B?style=flat-square) |
 | Trading Engine | 对接券商与执行层，处理交易订单路由 | 订单路由、审批流、执行辅助 | ![Planned](https://img.shields.io/badge/Status-Planned-F59E0B?style=flat-square) |
@@ -69,7 +69,7 @@ Phase 1 的重点是先把 personal risk profile 这层地基打稳。
 - profile onboarding
 - guided risk-profile discovery
 - profile review and versioning
-- persona markdown authoring
+- profile markdown authoring
 - long-term 和 short-term memory capture
 - 面向 host agents 的 MCP + HTTP 接入
 
@@ -158,7 +158,7 @@ flowchart LR
 | 资产 | 作用 |
 | --- | --- |
 | `../../SKILL.md` | Host agent 的顶层 skill，用来把 profile-aware 对话路由到 FinKernel |
-| `../../prompts/persona_assessment.md` | 基于 `assess_persona` 状态返回的 prompt 模板 |
+| `../../prompts/profile_assessment.md` | 基于 `assess_persona` 状态返回的 prompt 模板 |
 | `../../prompts/finkernel_system_routing.md` | 系统级 routing policy，确保 agent 在给泛化建议前先读取 profile context |
 
 ### 一等公民 agent
@@ -175,13 +175,13 @@ flowchart LR
 
 | 工具 | 作用 |
 | --- | --- |
-| `assess_persona` | persona add/update 的单入口编排工具 |
+| `assess_persona` | profile add/update 的单入口编排工具 |
 | `get_profile_onboarding_status` | 检查当前是否存在可用的 active profile |
 | `get_profile` | 读取结构化 persona profile |
-| `get_profile_persona_markdown` | 读取可读版 persona artifact |
-| `get_profile_persona_sources` | 读取 persona 背后的 evidence、memory 与 rules |
+| `get_profile_persona_markdown` | 读取可读版 profile markdown artifact |
+| `get_profile_persona_sources` | 读取 profile 背后的 evidence、memory 与 rules |
 | `get_risk_profile_summary` | 返回压缩版风险画像摘要，供下游建议使用 |
-| `save_profile_persona_markdown` | 保存或刷新 persona markdown |
+| `save_profile_persona_markdown` | 保存或刷新 profile markdown |
 | `review_profile` | 基于新证据启动 profile review/update |
 | `append_profile_memory` | 追加 long-term 或 short-term memory |
 | `search_profile_memory` | 检索与当前对话相关的 profile memory |
@@ -192,17 +192,17 @@ flowchart LR
 | 工具 | 作用 |
 | --- | --- |
 | `start_profile_discovery` | 不走单入口编排时，手动启动 discovery |
-| `get_next_profile_question` | 获取下一个 discovery 问题 |
-| `submit_profile_discovery_answer` | 提交 discovery session 的回答 |
+| `get_profile_discovery_state` | 读取当前 section、starter question、可见覆盖率和 working profile snapshot |
+| `submit_profile_discovery_interpretation` | 提交 Agent 分析后的 discovery interpretation packet |
 | `generate_profile_draft` | 从完成的 session 生成可确认 draft |
-| `confirm_profile_draft` | 在 persona markdown 就绪后确认 profile 版本 |
+| `confirm_profile_draft` | 在 profile markdown 就绪后确认 profile 版本 |
 | `list_profiles` | 列出 profile |
 | `list_profile_versions` | 查看单个 profile 的版本历史 |
 
 ### 推荐 host 流程
 
 1. 对于 profile-aware 的投资请求，先调用 `get_profile_onboarding_status`。
-2. 对 persona 的创建、续做或定向更新，统一使用 `assess_persona`。
+2. 对 profile 的创建、续做或定向更新，统一使用 `assess_persona`。
 3. 在给建议前，先读取 `get_profile`、`get_profile_persona_markdown` 和 `get_risk_profile_summary`。
 4. 当用户的新信息改变上下文时，再使用 review 与 memory 工具。
 
@@ -210,8 +210,8 @@ flowchart LR
 
 - `../README.md`
 - `../setup-and-run.md`
-- `../persona-profiles.md`
-- `../persona-agent-workflow.md`
+- `../profile-data-model.md`
+- `../profile-agent-workflow.md`
 - `../investment-conversation-routing.md`
 - `../upper-layer-agent-integration.md`
 - `../host-agent-runtime-integration.md`

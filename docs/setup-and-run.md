@@ -80,7 +80,7 @@ The supported manual alternative is still Docker-based:
    - `Hermes`: installs the FinKernel skill into `~/.hermes/skills` and tries `hermes config set mcp_servers.finkernel.url`
 2. If you need a manual example instead, use `config/host-agent-mcp-http.local.json` or `config/host-agent-mcp-http.example.json`.
 3. Keep `prompts/finkernel_system_routing.md` available to the host runtime.
-4. Use `prompts/persona_assessment.md` as the host-side assessment prompt template.
+4. Use `prompts/profile_assessment.md` as the host-side assessment prompt template.
 5. Use `SKILL.md` as the top-level profile-building skill.
 6. For a single-entry orchestration flow, start with `assess_persona`.
 

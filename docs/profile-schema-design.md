@@ -21,6 +21,22 @@ The profile has two jobs at the same time:
 This means FinKernel should never force all profile meaning into enums or flat
 labels, and it should never leave hard risk boundaries as free-form prose only.
 
+## Naming convention
+
+Use the following terminology consistently:
+
+- `profile` = the full user model and the final user-facing artifact
+- `profile markdown` = the final markdown document written for the user and future agents
+- `persona` = the personality and behavioral substrate inside the profile, not the whole artifact
+
+As a result:
+
+- `persona_traits` remains a valid field name
+- user-facing and design-facing language should prefer `profile` for the whole output
+- legacy compatibility names such as `persona_markdown` and `persona_evidence`
+  may remain in code or storage temporarily, but they should be understood as
+  legacy technical identifiers rather than the preferred product terminology
+
 ## Four pillars
 
 FinKernel still evaluates the user through four top-level pillars:
@@ -137,15 +153,19 @@ Examples:
 - "A recent home purchase makes current liquidity tighter than usual."
 - "Recent geopolitical headlines have increased short-term demand for safety."
 
-### Persona evidence
+### Profile evidence
 
-`persona_evidence` remains the source-of-truth transcript layer. It should keep
-the raw discovery excerpts tied to the dimensions that produced them.
+The transcript evidence layer remains the source of truth for direct user
+statements. In the current codebase this may still be stored under the legacy
+name `persona_evidence`, but the preferred product meaning is `profile evidence`.
 
-### Persona markdown
+### Profile markdown
 
-`persona_markdown` is the concluding human-readable profile. A draft should not
-be considered fully confirmed until this artifact exists.
+The final human-readable output is the profile markdown. In the current codebase
+this may still be stored under the legacy name `persona_markdown`, but the
+artifact itself should be understood and described as the user's profile.
+
+A draft should not be considered fully confirmed until this artifact exists.
 
 ## Middle layer: Contextual rules
 
@@ -186,8 +206,8 @@ The primary truth layer is:
 - `contextual_rules`
 - `long_term_memories`
 - `short_term_memories`
-- `persona_evidence`
-- `persona_markdown`
+- profile evidence
+- profile markdown
 
 ## Discovery implications
 
@@ -203,8 +223,8 @@ The discovery flow should:
    - contextual rules
    - long-term memories
    - short-term memories
-   - persona evidence
-   - persona markdown after confirmation
+   - profile evidence
+   - profile markdown after confirmation
 
 ## Relationship to current code
 
@@ -212,8 +232,9 @@ The implementation should align with this document through:
 
 - `src/finkernel/schemas/profile.py`
 - `src/finkernel/schemas/discovery.py`
-- `src/finkernel/services/question_planner.py`
 - `src/finkernel/services/profile_discovery.py`
 - `src/finkernel/services/profiles.py`
+- `prompts/discovery_question_generator.md`
+- `prompts/discovery_answer_extractor.md`
 
 Use this document as the contract for future profile work.

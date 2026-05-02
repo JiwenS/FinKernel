@@ -1,7 +1,7 @@
 # Upper-Layer Agent Integration
 
 FinKernel is responsible for profile onboarding, risk-profile retrieval,
-persona evidence storage, and persona markdown maintenance.
+profile evidence storage, and profile markdown maintenance.
 
 That is the full Phase 1 boundary: upper-layer agents should treat FinKernel as
 the dedicated risk-profile layer first, and only add broader investment logic
@@ -20,8 +20,8 @@ investment guidance.
 - `GET /api/profiles/{profile_id}/persona-sources`
 - `PUT /api/profiles/{profile_id}/persona`
 - `POST /api/profiles/discovery/sessions`
-- `GET /api/profiles/discovery/sessions/{session_id}/next-question`
-- `POST /api/profiles/discovery/sessions/{session_id}/answers`
+- `GET /api/profiles/discovery/sessions/{session_id}/state`
+- `POST /api/profiles/discovery/sessions/{session_id}/interpretation`
 - `POST /api/profiles/discovery/sessions/{session_id}/draft`
 - `POST /api/profiles/discovery/drafts/{draft_id}/confirm`
 - `POST /api/profiles/{profile_id}/review`
@@ -55,4 +55,4 @@ Do not give final profile-aware guidance until one of these is true:
 
 For dedicated profile-building flows, the host may instead use
 `POST /api/profiles/assess-persona` as the single orchestration checkpoint
-before each next question, draft, or update prompt.
+before each discovery-state refresh, draft, or update prompt.

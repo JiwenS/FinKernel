@@ -234,6 +234,28 @@ Future module implementations should follow these boundaries:
 - Long-running loops must have explicit stop, pause, and change-policy controls.
 - Any workflow that can trigger money movement must have a clear approval and audit model.
 
+## Agent-first interpretation rule
+
+When a workflow depends on nuanced text interpretation, the semantic judgment
+should be prompt-guided and agent-produced before it is stored by the system.
+
+Examples:
+
+- remaining gaps
+- confidence or uncertainty
+- contradiction detection
+- durable versus temporary signal classification
+
+The deterministic backend should:
+
+- accept those interpreted outputs
+- validate their shape where needed
+- persist them
+- expose them back to agents and hosts
+
+The deterministic backend should not be expected to infer such judgments from
+free-form text through hard-coded logic alone.
+
 ## Recommended build order
 
 The current roadmap should expand in this order:
@@ -259,7 +281,8 @@ The current roadmap should expand in this order:
 Use this document together with:
 
 - `docs/PRD.md`
-- `docs/persona-agent-workflow.md`
+- `docs/profile-discovery-architecture.md`
+- `docs/profile-agent-workflow.md`
 - `docs/investment-conversation-routing.md`
 - `docs/upper-layer-agent-integration.md`
 - `SKILL.md`

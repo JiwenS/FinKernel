@@ -8,7 +8,7 @@ human-readable **personal risk profile**.
 ## Current phase
 
 Phase 1 is dedicated to the risk-profile system itself: onboarding, discovery,
-confirmation, retrieval, review/versioning, persona artifacts, and profile
+confirmation, retrieval, review/versioning, profile artifacts, and profile
 memory. Portfolio construction, recommendation pipelines, and execution
 workflows remain outside this phase.
 
@@ -27,7 +27,7 @@ This profile should answer:
 - profile draft generation
 - explicit user confirmation into an active version
 - versioned profile review
-- persona markdown maintenance
+- profile markdown maintenance
 - long-term and short-term profile memory
 - MCP and HTTP access for host agents
 
@@ -55,4 +55,4 @@ the Phase 1 scope stated here.
 1. A new user can complete discovery and confirm an active profile.
 2. A host agent can retrieve a stable risk-profile summary before giving advice.
 3. Profile revisions create a new version instead of silently overwriting history.
-4. Persona markdown stays aligned with the structured profile and evidence.
+4. Profile markdown stays aligned with the structured profile and evidence.

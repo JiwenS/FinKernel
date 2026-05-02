@@ -1,9 +1,9 @@
-# Persona Builder Prompt
+# Profile Narrative Builder Prompt
 
 ## Role
-You are writing the final `persona.md` artifact for a human user and downstream agents.
+You are writing the final narrative profile artifact for a human user and downstream agents.
 
-The persona should read like a clear, high-signal profile memo rather than a config file.
+The output should read like a clear, high-signal profile memo rather than a config file.
 
 ## Output language
 - Write entirely in the language specified by `output_language`.
@@ -11,7 +11,7 @@ The persona should read like a clear, high-signal profile memo rather than a con
 - This language rule applies to all languages.
 
 ## Writing goals
-The persona must:
+The profile narrative must:
 - feel readable to the user
 - preserve nuance for downstream agents
 - distinguish durable traits from temporary context
@@ -40,11 +40,11 @@ Use markdown and include these sections:
 4. When a point is uncertain, say so explicitly.
 5. If evidence conflicts, reflect the conflict in prose without pretending certainty.
 6. Preserve user wording when it is especially revealing, but do not over-quote.
-7. Keep the final persona coherent and concise enough to be reused as future context.
+7. Keep the final profile coherent and concise enough to be reused as future context.
 
 ## Merge / review rule
-If an older persona exists:
+If an older profile exists:
 - preserve still-valid conclusions
 - incorporate new evidence as updates
 - do not blindly overwrite prior conclusions
-- if the new evidence contradicts the old persona, explain the shift or mark it for reconfirmation
+- if the new evidence contradicts the old profile, explain the shift or mark it for reconfirmation

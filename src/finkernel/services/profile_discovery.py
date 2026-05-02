@@ -11,26 +11,45 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from finkernel.config import Settings
 from finkernel.schemas.discovery import (
+    AcceptedInterpretationPacket,
+    ALL_REQUIRED_DIMENSIONS,
     ConfirmProfileDraftRequest,
+    ConfidenceLabel,
     ContextualRuleCandidate,
-    DiscoveryAnswer,
+    DimensionIssue,
+    DiscoveryConversationTurn,
     DiscoveryDimension,
+    DiscoveryInterpretationPacket,
+    NarrativeDimensionUpdate,
+    DiscoveryPillar,
     DiscoveryQuestion,
     DiscoveryQuestionSource,
     DiscoveryQuestionType,
+    EvidenceQualityLabel,
+    ExpectedAnswerShape,
+    PILLAR_DIMENSIONS,
     DiscoverySession,
     DiscoverySessionStatus,
     DiscoveryWorkflowKind,
     DimensionState,
     DraftReadinessAssessment,
+    EvidenceSnippet,
     NarrativeMemoryCandidate,
     PersonaAssessmentReason,
     PersonaAssessmentState,
     PersonaAssessmentStatus,
     PersonaUpdateChoice,
     PersonaUpdateOption,
+    ProfileDiscoveryState,
     ProfileDraft,
+    ProfileDraftFieldSource,
+    ProfileDraftSourcePacket,
     ReviewProfileRequest,
+    SectionCoverageStatus,
+    SectionCoverageSnapshot,
+    ShortTermMemoryCandidate,
+    StructuredFieldUpdate,
+    WorkingProfileSnapshot,
 )
 from finkernel.schemas.profile import (
     AccountBackground,
@@ -42,18 +61,25 @@ from finkernel.schemas.profile import (
     LiquidityFrequency,
     MemoryKind,
     PersonaProfile,
-    PersonaTraits,
     PersonaSourcePacket,
     ProfileLifecycleStatus,
     RiskBoundaries,
     RiskBudget,
     RiskProfileSummary,
 )
-from finkernel.services.persona_markdown import build_persona_evidence_from_answers
 from finkernel.services.profiles import ProfileStore
-from finkernel.services.question_planner import MANDATORY_DIMENSIONS, QuestionPlanner, build_empty_dimension_states
-from finkernel.storage.models import DiscoverySessionModel, ProfileDraftModel
-from finkernel.storage.repositories import DiscoverySessionRepository, ProfileDraftRepository
+from finkernel.storage.models import (
+    DiscoveryConversationTurnModel,
+    DiscoveryInterpretationModel,
+    DiscoverySessionModel,
+    ProfileDraftModel,
+)
+from finkernel.storage.repositories import (
+    DiscoveryConversationTurnRepository,
+    DiscoveryInterpretationRepository,
+    DiscoverySessionRepository,
+    ProfileDraftRepository,
+)
 
 PROMPT_TEMPLATE_ADD_QUESTION = "persona_assessment.add_question"
 PROMPT_TEMPLATE_UPDATE_QUESTION = "persona_assessment.update_question"
@@ -95,7 +121,7 @@ UPDATE_OPTION_DEFINITIONS: tuple[PersonaUpdateOption, ...] = (
 )
 
 UPDATE_CHOICE_DIMENSIONS: dict[PersonaUpdateChoice, list[DiscoveryDimension]] = {
-    PersonaUpdateChoice.FULL_REASSESSMENT: list(MANDATORY_DIMENSIONS),
+    PersonaUpdateChoice.FULL_REASSESSMENT: list(ALL_REQUIRED_DIMENSIONS),
     PersonaUpdateChoice.FINANCIAL_OBJECTIVES: [
         DiscoveryDimension.TARGET_ANNUAL_RETURN,
         DiscoveryDimension.INVESTMENT_HORIZON,
@@ -124,8 +150,35 @@ UPDATE_CHOICE_DIMENSIONS: dict[PersonaUpdateChoice, list[DiscoveryDimension]] = 
     ],
 }
 
+SECTION_STARTER_QUESTIONS: dict[DiscoveryPillar, tuple[str, str]] = {
+    DiscoveryPillar.FINANCIAL_OBJECTIVES: (
+        "If this capital is meant to serve real life goals, what do you want it to accomplish for you, and are there any time horizons or cash needs that already matter?",
+        "This opens the section by surfacing target return, time horizon, and liquidity context in the user's own words.",
+    ),
+    DiscoveryPillar.RISK: (
+        "When investments fluctuate or lose money, what actually becomes unacceptable for you, and how do you recognize that line in practice?",
+        "This opens the section by surfacing loss boundaries, volatility tolerance, leverage limits, and behavioral stress signals.",
+    ),
+    DiscoveryPillar.CONSTRAINTS: (
+        "Are there any investments, sectors, currencies, tax realities, or mandate rules that you already know should be excluded or treated as hard limits?",
+        "This opens the section by surfacing hard filters, concentration constraints, and tax or currency anchors.",
+    ),
+    DiscoveryPillar.BACKGROUND: (
+        "What context about the account, the capital behind it, and the way you want decisions handled would help an agent operate appropriately for you?",
+        "This opens the section by surfacing account structure, delegated-versus-advisory execution, and durable persona traits.",
+    ),
+}
+
+
+def build_empty_dimension_states() -> list[DimensionState]:
+    return [DimensionState(dimension=dimension) for dimension in ALL_REQUIRED_DIMENSIONS]
+
 
 class DiscoveryNotReadyError(ValueError):
+    pass
+
+
+class InvalidDiscoveryInterpretationError(ValueError):
     pass
 
 
@@ -136,15 +189,17 @@ class ProfileDiscoveryService:
         settings: Settings,
         session_factory: sessionmaker[Session],
         profile_store: ProfileStore,
-        planner: QuestionPlanner | None = None,
         session_repository: DiscoverySessionRepository | None = None,
+        turn_repository: DiscoveryConversationTurnRepository | None = None,
+        interpretation_repository: DiscoveryInterpretationRepository | None = None,
         draft_repository: ProfileDraftRepository | None = None,
     ) -> None:
         self.settings = settings
         self.session_factory = session_factory
         self.profile_store = profile_store
-        self.planner = planner or QuestionPlanner()
         self.session_repository = session_repository or DiscoverySessionRepository()
+        self.turn_repository = turn_repository or DiscoveryConversationTurnRepository()
+        self.interpretation_repository = interpretation_repository or DiscoveryInterpretationRepository()
         self.draft_repository = draft_repository or ProfileDraftRepository()
 
     def start_discovery(self, *, owner_id: str, preferred_profile_name: str | None = None) -> DiscoverySession:
@@ -153,14 +208,12 @@ class ProfileDiscoveryService:
             owner_id=owner_id,
             preferred_profile_name=preferred_profile_name,
             workflow_kind=DiscoveryWorkflowKind.ADD,
+            target_dimensions=list(ALL_REQUIRED_DIMENSIONS),
             dimension_states=build_empty_dimension_states(),
+            working_profile_snapshot=WorkingProfileSnapshot(),
         )
-        next_question = self.planner.choose_next_question(session)
-        if next_question is not None:
-            session.current_question_id = next_question.question_id
-            session.current_question = next_question
-            session.asked_question_ids.append(next_question.question_id)
-        self._save_session(session, next_question=next_question)
+        session.section_coverage = self._build_section_coverage_from_session(session)
+        self._save_session(session)
         return session
 
     def start_update(
@@ -174,6 +227,8 @@ class ProfileDiscoveryService:
         profile = self.profile_store.get(profile_id, require_active=False)
         session_id = str(uuid4())
         selected_dimensions = self._normalize_dimensions(target_dimensions or self._dimensions_for_update_choice(update_choice))
+        if not selected_dimensions and update_choice is None and target_dimensions is None:
+            selected_dimensions = list(ALL_REQUIRED_DIMENSIONS)
         session = DiscoverySession(
             session_id=session_id,
             owner_id=profile.owner_id,
@@ -183,33 +238,15 @@ class ProfileDiscoveryService:
             update_choice=update_choice,
             update_notes=update_notes,
             target_dimensions=selected_dimensions,
-            dimension_states=build_empty_dimension_states(),
+            dimension_states=self._seed_dimension_states_from_profile(profile),
+            working_profile_snapshot=self._build_working_snapshot_from_profile(profile),
         )
-        seeded_answers = self._seed_answers_from_profile(
-            profile,
-            session_id=session_id,
-            payload=ReviewProfileRequest(
-                trigger=self._build_update_trigger(update_choice, selected_dimensions),
-                notes=update_notes,
-            ),
-        )
-        for answer in seeded_answers:
-            session.answers.append(answer)
-            self.planner.update_dimension_state(session, answer)
-        self._reset_target_dimensions(session, selected_dimensions)
+        self._mark_dimensions_for_refresh(session, selected_dimensions)
         session.updated_at = datetime.now(UTC)
-        readiness = self.planner.build_readiness(session)
-        if readiness.ready:
-            session.status = DiscoverySessionStatus.DRAFT_READY
-            self._save_session(session, next_question=None)
-            return session
-
-        next_question = self.planner.choose_next_question(session)
-        if next_question is not None:
-            session.current_question_id = next_question.question_id
-            session.current_question = next_question
-            session.asked_question_ids.append(next_question.question_id)
-        self._save_session(session, next_question=next_question)
+        session.section_coverage = self._build_section_coverage_from_session(session)
+        readiness = self._build_readiness(session)
+        session.status = DiscoverySessionStatus.DRAFT_READY if readiness.ready else DiscoverySessionStatus.DISCOVERY_IN_PROGRESS
+        self._save_session(session)
         return session
 
     def get_session(self, session_id: str) -> DiscoverySession:
@@ -217,64 +254,163 @@ class ProfileDiscoveryService:
             model = self.session_repository.get(session, session_id)
             if model is None:
                 raise KeyError(f"Unknown discovery_session_id: {session_id}")
-            return DiscoverySession.model_validate(model.payload)
+            payload = dict(model.payload)
+            payload["conversation_turns"] = [
+                turn_model.payload
+                for turn_model in self.turn_repository.list_for_session(session, session_id)
+            ]
+            payload["interpretation_history"] = [
+                interpretation_model.payload
+                for interpretation_model in self.interpretation_repository.list_for_session(session, session_id)
+            ]
+            return DiscoverySession.model_validate(payload)
 
-    def get_next_question(self, session_id: str) -> DiscoveryQuestion | None:
-        session, current_question = self._load_session_with_question(session_id)
-        if session.status is DiscoverySessionStatus.DRAFT_READY:
-            return None
-        if current_question is not None and current_question.question_id == session.current_question_id:
-            return current_question
+    def get_discovery_state(self, session_id: str) -> ProfileDiscoveryState:
+        session = self.get_session(session_id)
+        if not session.section_coverage:
+            session.section_coverage = self._build_section_coverage_from_session(session)
+        if session.working_profile_snapshot is None:
+            session.working_profile_snapshot = WorkingProfileSnapshot()
+        return self._build_discovery_state(session)
 
-        next_question = self.planner.choose_next_question(session)
-        if next_question is None:
-            session.status = DiscoverySessionStatus.DRAFT_READY
-            session.current_question_id = None
-            session.current_question = None
-            self._save_session(session, next_question=None)
-            return None
-        session.current_question_id = next_question.question_id
-        session.current_question = next_question
-        session.asked_question_ids.append(next_question.question_id)
-        self._save_session(session, next_question=next_question)
-        return next_question
+    def submit_interpretation(self, *, session_id: str, packet: DiscoveryInterpretationPacket) -> ProfileDiscoveryState:
+        session = self.get_session(session_id)
+        allowed_dimensions = self._validate_interpretation_packet(session, packet)
+        snapshot = session.working_profile_snapshot or WorkingProfileSnapshot()
+        now = datetime.now(UTC)
 
-    def submit_answer(self, *, session_id: str, answer_text: str, question_id: str | None = None) -> DiscoverySession:
-        session, current_question = self._load_session_with_question(session_id)
-        question = current_question if question_id is None else self._find_question(session_id=session_id, question_id=question_id)
-        if question is None:
-            raise KeyError(f"No active question is available for discovery session {session_id}.")
-
-        answer = DiscoveryAnswer(
-            answer_id=str(uuid4()),
+        turn = DiscoveryConversationTurn(
+            turn_id=str(uuid4()),
             session_id=session_id,
-            question_id=question.question_id,
-            dimension=question.dimension,
-            answer_text=answer_text.strip(),
-            question_type=question.question_type,
-            source_type=question.source_type,
+            section=packet.section,
+            question_text=packet.question_text,
+            answer_text=packet.answer_text.strip(),
+            answered_at=now,
         )
-        session.answers.append(answer)
-        self.planner.update_dimension_state(session, answer)
-        session.updated_at = datetime.now(UTC)
-        readiness = self.planner.build_readiness(session)
+        session.conversation_turns.append(turn)
+
+        confidence_score = self._confidence_score_from_label(packet.confidence_label)
+        touched_dimensions = set(packet.covered_dimensions)
+
+        for update in packet.structured_field_updates:
+            normalized_value = self._apply_structured_field_update(snapshot, update)
+            self._get_dimension_state(session, update.dimension).normalized_value = normalized_value
+            touched_dimensions.add(update.dimension)
+
+        for update in packet.narrative_dimension_updates:
+            self._apply_narrative_dimension_update(snapshot, update)
+            self._get_dimension_state(session, update.dimension).normalized_value = update.text.strip()
+            touched_dimensions.add(update.dimension)
+
+        evidence_dimensions: set[DiscoveryDimension] = set()
+        if packet.evidence_snippets:
+            for snippet in packet.evidence_snippets:
+                self._append_evidence_snippet(snapshot, snippet)
+                if snippet.dimension in allowed_dimensions:
+                    evidence_dimensions.add(snippet.dimension)
+        else:
+            default_evidence_dimension = self._default_evidence_dimension(packet, touched_dimensions)
+            self._append_evidence_snippet(
+                snapshot,
+                EvidenceSnippet(
+                    excerpt=packet.answer_text.strip(),
+                    dimension=default_evidence_dimension,
+                ),
+            )
+            if default_evidence_dimension in allowed_dimensions:
+                evidence_dimensions.add(default_evidence_dimension)
+
+        for candidate in packet.long_term_memory_candidates:
+            self._append_long_term_memory(snapshot, candidate)
+        for candidate in packet.short_term_memory_candidates:
+            self._append_short_term_memory(snapshot, candidate)
+        for candidate in packet.contextual_rule_candidates:
+            self._append_contextual_rule(snapshot, candidate)
+
+        covered_in_section = set(packet.covered_dimensions).intersection(allowed_dimensions)
+        for dimension in touched_dimensions.intersection(allowed_dimensions):
+            state = self._get_dimension_state(session, dimension)
+            state.last_updated_at = now
+            state.extracted_facts.append(packet.answer_text.strip())
+            if dimension in evidence_dimensions:
+                state.evidence_score = max(state.evidence_score, confidence_score)
+            if dimension in covered_in_section:
+                state.coverage_score = 3
+                state.confidence_score = confidence_score
+                state.depth_score = max(state.depth_score, 2)
+                state.pending_gaps = []
+            else:
+                state.coverage_score = max(state.coverage_score, 1)
+                state.confidence_score = max(state.confidence_score, confidence_score)
+
+        dimension_remaining_gaps = self._dimension_issue_notes(packet.dimension_remaining_gaps)
+        dimension_conflict_notes = self._dimension_issue_notes(packet.dimension_conflict_notes)
+        generic_remaining_gaps = self._clean_issue_notes(packet.remaining_gaps) + self._section_issue_notes(packet.dimension_remaining_gaps)
+        generic_remaining_gaps = list(dict.fromkeys(generic_remaining_gaps))
+        generic_conflict_notes = self._clean_issue_notes(packet.conflict_notes) + self._section_issue_notes(packet.dimension_conflict_notes)
+        generic_conflict_notes = list(dict.fromkeys(generic_conflict_notes))
+
+        uncovered_in_section = [
+            dimension
+            for dimension in allowed_dimensions
+            if dimension not in covered_in_section
+        ]
+        for dimension in uncovered_in_section:
+            state = self._get_dimension_state(session, dimension)
+            state.pending_gaps = list(dimension_remaining_gaps.get(dimension, generic_remaining_gaps))
+            state.confidence_score = max(state.confidence_score, confidence_score)
+            state.last_updated_at = now
+            if state.coverage_score == 0:
+                state.coverage_score = 1
+
+        for dimension in allowed_dimensions:
+            state = self._get_dimension_state(session, dimension)
+            if packet.section_complete and dimension in covered_in_section:
+                state.pending_gaps = []
+                state.conflict_flag = False
+            elif dimension_conflict_notes.get(dimension):
+                state.pending_gaps = list(dict.fromkeys(state.pending_gaps + dimension_conflict_notes[dimension]))
+                state.conflict_flag = True
+            elif generic_conflict_notes and dimension in covered_in_section:
+                state.conflict_flag = True
+
+        if packet.section_complete:
+            incomplete_after_update = [
+                dimension
+                for dimension in allowed_dimensions
+                if self._dimension_requires_more_work(self._get_dimension_state(session, dimension))
+            ]
+            if incomplete_after_update:
+                raise InvalidDiscoveryInterpretationError(
+                    "section_complete was set to true before the current section had enough confirmed coverage."
+                )
+
+        accepted_interpretation = AcceptedInterpretationPacket(
+            interpretation_id=str(uuid4()),
+            session_id=session_id,
+            packet=packet,
+            stored_at=now,
+        )
+        session.interpretation_history.append(accepted_interpretation)
+
+        session.working_profile_snapshot = snapshot
+        session.section_coverage = self._build_section_coverage_from_session(session)
+        session.updated_at = now
+        readiness = self._build_readiness(session)
         session.status = DiscoverySessionStatus.DRAFT_READY if readiness.ready else DiscoverySessionStatus.DISCOVERY_IN_PROGRESS
-        session.current_question_id = None
-        session.current_question = None
-        self._save_session(session, next_question=None)
-        return session
+        self._save_session(session, new_turn=turn, new_interpretation=accepted_interpretation)
+        return self._build_discovery_state(session)
 
     def generate_draft(self, session_id: str) -> ProfileDraft:
         session = self.get_session(session_id)
-        readiness = self.planner.build_readiness(session)
+        readiness = self._build_readiness(session)
         if not readiness.ready:
             raise DiscoveryNotReadyError(f"Discovery session {session_id} is not ready for draft generation.")
 
         draft = self._build_draft(session, readiness)
         self._save_draft(draft)
         session.status = DiscoverySessionStatus.DRAFT_READY
-        current_question = self._find_question(session_id=session_id, question_id=session.current_question_id) if session.current_question_id else None
-        self._save_session(session, next_question=current_question)
+        self._save_session(session)
         return draft
 
     def get_draft(self, draft_id: str) -> ProfileDraft:
@@ -389,25 +525,16 @@ class ProfileDiscoveryService:
     def save_persona_markdown(self, *, profile_id: str, persona_markdown: str, version: int | None = None) -> PersonaProfile:
         return self.profile_store.save_persona_markdown(profile_id=profile_id, persona_markdown=persona_markdown, version=version)
 
+    def save_profile_markdown(self, *, profile_id: str, profile_markdown: str, version: int | None = None) -> PersonaProfile:
+        return self.save_persona_markdown(profile_id=profile_id, persona_markdown=profile_markdown, version=version)
+
     def start_review(self, *, profile_id: str, payload: ReviewProfileRequest) -> DiscoverySession:
-        profile = self.profile_store.get(profile_id, require_active=False)
-        session_id = str(uuid4())
-        session = DiscoverySession(
-            session_id=session_id,
-            owner_id=profile.owner_id,
-            preferred_profile_name=profile.display_name,
-            workflow_kind=DiscoveryWorkflowKind.UPDATE,
-            source_profile_id=profile.profile_id,
+        return self.start_update(
+            profile_id=profile_id,
             update_choice=PersonaUpdateChoice.FULL_REASSESSMENT,
             update_notes=payload.notes,
-            target_dimensions=list(MANDATORY_DIMENSIONS),
-            status=DiscoverySessionStatus.DRAFT_READY,
-            dimension_states=self._seed_dimension_states(),
-            answers=self._seed_answers_from_profile(profile, session_id=session_id, payload=payload),
+            target_dimensions=list(ALL_REQUIRED_DIMENSIONS),
         )
-        session.updated_at = datetime.now(UTC)
-        self._save_session(session, next_question=None)
-        return session
 
     def assess_profile_completeness(self, profile_id: str, *, version: int | None = None) -> DraftReadinessAssessment:
         profile = self.get_profile(profile_id, version=version)
@@ -417,17 +544,13 @@ class ProfileDiscoveryService:
             preferred_profile_name=profile.display_name,
             workflow_kind=DiscoveryWorkflowKind.UPDATE,
             source_profile_id=profile.profile_id,
-            dimension_states=build_empty_dimension_states(),
+            target_dimensions=list(ALL_REQUIRED_DIMENSIONS),
+            dimension_states=self._seed_dimension_states_from_profile(profile),
+            section_coverage=[],
+            working_profile_snapshot=self._build_working_snapshot_from_profile(profile),
         )
-        seeded_answers = self._seed_answers_from_profile(
-            profile,
-            session_id=session.session_id,
-            payload=ReviewProfileRequest(trigger="persona_completeness_check"),
-        )
-        for answer in seeded_answers:
-            session.answers.append(answer)
-            self.planner.update_dimension_state(session, answer)
-        readiness = self.planner.build_readiness(session)
+        session.section_coverage = self._build_section_coverage_from_session(session)
+        readiness = self._build_readiness(session)
         if not profile.persona_markdown:
             readiness.notes.append("Persona markdown is still missing.")
         return readiness
@@ -558,98 +681,73 @@ class ProfileDiscoveryService:
                 "version": next_version,
                 "status": ProfileLifecycleStatus.ACTIVE,
                 "supersedes_profile_version": max((profile.version for profile in existing_versions if profile.is_active), default=None),
-                "persona_markdown": payload.persona_markdown or suggested.persona_markdown,
+                "persona_markdown": payload.profile_markdown or payload.persona_markdown or suggested.persona_markdown,
             }
         )
         self.profile_store.append_profile(final_profile)
         self._mark_session_completed(draft.session_id)
         return final_profile
 
-    def _seed_dimension_states(self) -> list[DimensionState]:
+    def _seed_dimension_states_from_profile(self, profile: PersonaProfile) -> list[DimensionState]:
         states = build_empty_dimension_states()
-        for state in states:
+        state_map = {state.dimension: state for state in states}
+
+        def mark(dimension: DiscoveryDimension, value: Any) -> None:
+            if value in (None, "", {}):
+                return
+            if isinstance(value, list) and not value and dimension not in {
+                DiscoveryDimension.BLOCKED_SECTORS,
+                DiscoveryDimension.BLOCKED_TICKERS,
+            }:
+                return
+            state = state_map[dimension]
             state.coverage_score = 3
             state.confidence_score = 3
+            state.evidence_score = 2
             state.depth_score = 2
-        return states
+            state.last_updated_at = datetime.now(UTC)
+            state.normalized_value = value
+            state.extracted_facts = [str(value)]
 
-    def _seed_answers_from_profile(self, profile: PersonaProfile, *, session_id: str, payload: ReviewProfileRequest) -> list[DiscoveryAnswer]:
-        answers = self._seed_review_answers_from_evidence(profile)
-        if not answers:
-            answers = self._seed_review_answers_from_structured_profile(profile)
-        if payload.notes:
-            answers.append((DiscoveryDimension.BEHAVIORAL_RISK_PROFILE, f"Review note: {payload.notes}"))
-
-        seeded_answers: list[DiscoveryAnswer] = []
-        now = datetime.now(UTC)
-        for index, (dimension, text) in enumerate(answers):
-            if not text:
-                continue
-            seeded_answers.append(
-                DiscoveryAnswer(
-                    answer_id=str(uuid4()),
-                    session_id=session_id,
-                    question_id=f"seed-{index}-{dimension.value}",
-                    dimension=dimension,
-                    answer_text=text,
-                    question_type=DiscoveryQuestionType.DEEPENING,
-                    source_type=DiscoveryQuestionSource.RULE_TRIGGER,
-                    answered_at=now,
-                    extracted_signals=["review_seed"],
-                )
-            )
-        return seeded_answers
-
-    def _seed_review_answers_from_evidence(self, profile: PersonaProfile) -> list[tuple[DiscoveryDimension, str]]:
-        answers: list[tuple[DiscoveryDimension, str]] = []
-        seen_dimensions: set[DiscoveryDimension] = set()
-        for item in profile.persona_evidence:
-            raw_dimension = item.get("dimension")
-            excerpt = str(item.get("excerpt") or "").strip()
-            if not raw_dimension or not excerpt:
-                continue
-            try:
-                dimension = DiscoveryDimension(str(raw_dimension))
-            except ValueError:
-                continue
-            if dimension in seen_dimensions:
-                continue
-            answers.append((dimension, excerpt))
-            seen_dimensions.add(dimension)
-        return answers
-
-    def _seed_review_answers_from_structured_profile(self, profile: PersonaProfile) -> list[tuple[DiscoveryDimension, str]]:
         financial = profile.financial_objectives
         risk = profile.risk_boundaries
         constraints = profile.investment_constraints
         background = profile.account_background
         traits = profile.persona_traits
-        return [
-            (DiscoveryDimension.TARGET_ANNUAL_RETURN, self._stringify(financial.target_annual_return_pct)),
-            (DiscoveryDimension.INVESTMENT_HORIZON, self._stringify(financial.investment_horizon_years)),
-            (DiscoveryDimension.ANNUAL_LIQUIDITY_NEED, self._stringify(financial.annual_liquidity_need)),
-            (DiscoveryDimension.LIQUIDITY_FREQUENCY, financial.liquidity_frequency.value if financial.liquidity_frequency else ""),
-            (DiscoveryDimension.MAX_DRAWDOWN_LIMIT, self._stringify(risk.max_drawdown_limit_pct)),
-            (DiscoveryDimension.MAX_ANNUAL_VOLATILITY, self._stringify(risk.max_annual_volatility_pct)),
-            (DiscoveryDimension.MAX_LEVERAGE_RATIO, self._stringify(risk.max_leverage_ratio)),
-            (DiscoveryDimension.SINGLE_ASSET_CAP, self._stringify(risk.single_asset_cap_pct)),
-            (DiscoveryDimension.BLOCKED_SECTORS, self._serialize_list(constraints.blocked_sectors) or "none"),
-            (DiscoveryDimension.BLOCKED_TICKERS, self._serialize_list(constraints.blocked_tickers) or "none"),
-            (DiscoveryDimension.BASE_CURRENCY, constraints.base_currency or ""),
-            (DiscoveryDimension.TAX_RESIDENCY, constraints.tax_residency or ""),
-            (DiscoveryDimension.ACCOUNT_ENTITY_TYPE, background.account_entity_type.value if background.account_entity_type else ""),
-            (DiscoveryDimension.AUM_ALLOCATED, self._stringify(background.aum_allocated)),
-            (DiscoveryDimension.EXECUTION_MODE, background.execution_mode.value if background.execution_mode else ""),
-            (DiscoveryDimension.FINANCIAL_LITERACY, traits.financial_literacy or ""),
-            (DiscoveryDimension.WEALTH_ORIGIN_DNA, traits.wealth_origin_dna or ""),
-            (DiscoveryDimension.BEHAVIORAL_RISK_PROFILE, traits.behavioral_risk_profile or ""),
-        ]
 
-    def _serialize_list(self, items: list[str]) -> str:
-        return ", ".join(items)
+        mark(DiscoveryDimension.TARGET_ANNUAL_RETURN, financial.target_annual_return_pct)
+        mark(DiscoveryDimension.INVESTMENT_HORIZON, financial.investment_horizon_years)
+        mark(DiscoveryDimension.ANNUAL_LIQUIDITY_NEED, financial.annual_liquidity_need)
+        mark(DiscoveryDimension.LIQUIDITY_FREQUENCY, financial.liquidity_frequency.value if financial.liquidity_frequency else None)
+        mark(DiscoveryDimension.MAX_DRAWDOWN_LIMIT, risk.max_drawdown_limit_pct)
+        mark(DiscoveryDimension.MAX_ANNUAL_VOLATILITY, risk.max_annual_volatility_pct)
+        mark(DiscoveryDimension.MAX_LEVERAGE_RATIO, risk.max_leverage_ratio)
+        mark(DiscoveryDimension.SINGLE_ASSET_CAP, risk.single_asset_cap_pct)
+        mark(DiscoveryDimension.BLOCKED_SECTORS, constraints.blocked_sectors)
+        mark(DiscoveryDimension.BLOCKED_TICKERS, constraints.blocked_tickers)
+        mark(DiscoveryDimension.BASE_CURRENCY, constraints.base_currency)
+        mark(DiscoveryDimension.TAX_RESIDENCY, constraints.tax_residency)
+        mark(DiscoveryDimension.ACCOUNT_ENTITY_TYPE, background.account_entity_type.value if background.account_entity_type else None)
+        mark(DiscoveryDimension.AUM_ALLOCATED, background.aum_allocated)
+        mark(DiscoveryDimension.EXECUTION_MODE, background.execution_mode.value if background.execution_mode else None)
+        mark(DiscoveryDimension.FINANCIAL_LITERACY, traits.financial_literacy)
+        mark(DiscoveryDimension.WEALTH_ORIGIN_DNA, traits.wealth_origin_dna)
+        mark(DiscoveryDimension.BEHAVIORAL_RISK_PROFILE, traits.behavioral_risk_profile)
+        return states
 
-    def _stringify(self, value: Any) -> str:
-        return "" if value in (None, "") else str(value)
+    def _build_working_snapshot_from_profile(self, profile: PersonaProfile) -> WorkingProfileSnapshot:
+        return WorkingProfileSnapshot(
+            financial_objectives=profile.financial_objectives.model_copy(deep=True),
+            risk_boundaries=profile.risk_boundaries.model_copy(deep=True),
+            investment_constraints=profile.investment_constraints.model_copy(deep=True),
+            account_background=profile.account_background.model_copy(deep=True),
+            persona_traits=profile.persona_traits.model_copy(deep=True),
+            contextual_rules=[dict(item) for item in profile.contextual_rules],
+            long_term_memories=[dict(item) for item in profile.long_term_memories],
+            short_term_memories=[dict(item) for item in profile.short_term_memories],
+            persona_evidence=[dict(item) for item in profile.persona_evidence],
+            persona_markdown=profile.persona_markdown,
+        )
 
     def _select_active_profile(self, *, owner_id: str, profile_id: str | None) -> PersonaProfile | None:
         if profile_id is not None:
@@ -734,15 +832,15 @@ class ProfileDiscoveryService:
             draft = self._get_or_create_draft_for_session(session.session_id)
             notes = list(draft.readiness.notes)
             if action is DiscoveryWorkflowKind.ADD:
-                notes.insert(0, "All required persona sections are covered. Write persona markdown and confirm the draft.")
+                notes.insert(0, "All required profile sections are covered. Write the final profile markdown and confirm the draft.")
             else:
-                notes.insert(0, "This update pass has enough evidence to write refreshed persona markdown and confirm a new version.")
+                notes.insert(0, "This update pass has enough evidence to write refreshed profile markdown and confirm a new version.")
             return PersonaAssessmentState(
                 owner_id=session.owner_id,
                 action=action,
                 status=PersonaAssessmentStatus.DRAFT_READY,
                 reason=PersonaAssessmentReason.PERSONA_READY_FOR_CONFIRMATION,
-                recommended_next_action="write_or_refresh_persona_markdown_then_confirm_profile_draft",
+                recommended_next_action="write_or_refresh_profile_markdown_then_confirm_profile_draft",
                 prompt_template_id=PROMPT_TEMPLATE_DRAFT_READY,
                 active_profile_id=active_profile.profile_id if active_profile else draft.suggested_profile.profile_id,
                 active_profile_version=active_profile.version if active_profile else None,
@@ -752,21 +850,10 @@ class ProfileDiscoveryService:
                 selected_update_choice=session.update_choice,
                 missing_dimensions=draft.readiness.unmet_dimensions,
                 notes=notes,
+                discovery_state=self._build_discovery_state(session),
             )
 
-        question = session.current_question if session.current_question_id else None
-        if question is None:
-            question = self.get_next_question(session.session_id)
-            session = self.get_session(session.session_id)
-            if session.status is DiscoverySessionStatus.DRAFT_READY:
-                return self._build_assessment_state_from_session(
-                    session,
-                    action=action,
-                    reason=reason,
-                    active_profile=active_profile,
-                )
-
-        readiness = self.planner.build_readiness(session)
+        readiness = self._build_readiness(session)
         notes = list(readiness.notes)
         if active_profile is not None and not active_profile.persona_markdown:
             notes.append("Persona markdown is still missing.")
@@ -776,12 +863,13 @@ class ProfileDiscoveryService:
                 + ", ".join(dimension.value for dimension in session.target_dimensions)
                 + "."
             )
+        discovery_state = self._build_discovery_state(session)
         return PersonaAssessmentState(
             owner_id=session.owner_id,
             action=action,
             status=PersonaAssessmentStatus.QUESTION_PENDING,
             reason=reason,
-            recommended_next_action="ask_the_returned_question_then_submit_the_answer",
+            recommended_next_action="inspect_discovery_state_then_generate_or_ask_the_current_section_question",
             prompt_template_id=PROMPT_TEMPLATE_ADD_QUESTION if action is DiscoveryWorkflowKind.ADD else PROMPT_TEMPLATE_UPDATE_QUESTION,
             active_profile_id=active_profile.profile_id if active_profile else None,
             active_profile_version=active_profile.version if active_profile else None,
@@ -790,41 +878,29 @@ class ProfileDiscoveryService:
             selected_update_choice=session.update_choice,
             missing_dimensions=readiness.unmet_dimensions,
             notes=notes,
-            next_question=question,
+            discovery_state=discovery_state,
         )
 
     def _build_draft(self, session: DiscoverySession, readiness: DraftReadinessAssessment) -> ProfileDraft:
-        answer_map = {answer.dimension: answer.answer_text for answer in session.answers}
-        normalized_map = {
-            state.dimension: state.normalized_value
-            for state in session.dimension_states
-            if state.normalized_value is not None
-        }
+        snapshot = session.working_profile_snapshot or WorkingProfileSnapshot()
+        return self._build_draft_from_snapshot(session, readiness, snapshot)
+
+    def _build_draft_from_snapshot(
+        self,
+        session: DiscoverySession,
+        readiness: DraftReadinessAssessment,
+        snapshot: WorkingProfileSnapshot,
+    ) -> ProfileDraft:
         preferred_name = session.preferred_profile_name or "Primary Risk Profile"
         profile_id = session.source_profile_id or self._slugify_profile_id(preferred_name, session.owner_id)
-        financial_objectives = self._build_financial_objectives(normalized_map)
-        risk_boundaries = self._build_risk_boundaries(normalized_map)
-        investment_constraints = self._build_investment_constraints(normalized_map)
-        account_background = self._build_account_background(normalized_map)
-        persona_traits = self._build_persona_traits(normalized_map, answer_map)
-        risk_budget = self._derive_risk_budget(risk_boundaries)
+        risk_budget = self._derive_risk_budget(snapshot.risk_boundaries)
         mandate_summary = self._build_mandate_summary(
-            financial_objectives,
-            risk_boundaries,
-            investment_constraints,
-            account_background,
+            snapshot.financial_objectives,
+            snapshot.risk_boundaries,
+            snapshot.investment_constraints,
+            snapshot.account_background,
             risk_budget,
         )
-        contextual_rules = self._build_contextual_rules(
-            answer_map,
-            financial_objectives,
-            risk_boundaries,
-            investment_constraints,
-            account_background,
-        )
-        long_term_memories = self._build_long_term_memories(answer_map, persona_traits)
-        short_term_memories = self._build_short_term_memories(answer_map, financial_objectives)
-        persona_evidence = build_persona_evidence_from_answers([answer.model_dump(mode="json") for answer in session.answers])
         suggested_profile = PersonaProfile(
             profile_id=profile_id,
             owner_id=session.owner_id,
@@ -832,186 +908,119 @@ class ProfileDiscoveryService:
             status=ProfileLifecycleStatus.PENDING_USER_CONFIRMATION,
             display_name=preferred_name,
             mandate_summary=mandate_summary,
-            persona_style=self._derive_persona_style(risk_budget, financial_objectives, account_background),
-            created_from="guided_discovery" if session.workflow_kind is DiscoveryWorkflowKind.ADD else "persona_update",
+            persona_style=self._derive_persona_style(risk_budget, snapshot.financial_objectives, snapshot.account_background),
+            created_from="guided_discovery" if session.workflow_kind is DiscoveryWorkflowKind.ADD else "profile_update",
             risk_budget=risk_budget,
-            financial_objectives=financial_objectives,
-            risk_boundaries=risk_boundaries,
-            investment_constraints=investment_constraints,
-            account_background=account_background,
-            persona_traits=persona_traits,
-            contextual_rules=[item.model_dump(mode="json") for item in contextual_rules],
-            long_term_memories=[item.model_dump(mode="json") for item in long_term_memories],
-            short_term_memories=short_term_memories,
-            persona_evidence=persona_evidence,
+            financial_objectives=snapshot.financial_objectives,
+            risk_boundaries=snapshot.risk_boundaries,
+            investment_constraints=snapshot.investment_constraints,
+            account_background=snapshot.account_background,
+            persona_traits=snapshot.persona_traits,
+            contextual_rules=list(snapshot.contextual_rules),
+            long_term_memories=list(snapshot.long_term_memories),
+            short_term_memories=list(snapshot.short_term_memories),
+            persona_evidence=list(snapshot.persona_evidence),
+            persona_markdown=snapshot.persona_markdown,
         )
+        contextual_rules = [ContextualRuleCandidate.model_validate(item) for item in snapshot.contextual_rules]
+        narrative_memories = [
+            NarrativeMemoryCandidate.model_validate(item)
+            for item in snapshot.long_term_memories
+            if isinstance(item, dict) and item.get("summary") and item.get("theme")
+        ]
         return ProfileDraft(
             draft_id=str(uuid4()),
             session_id=session.session_id,
             owner_id=session.owner_id,
             readiness=readiness,
             suggested_profile=suggested_profile,
+            draft_source=self._build_draft_source_packet(session, readiness, snapshot),
             contextual_rules=contextual_rules,
-            narrative_memories=long_term_memories,
+            narrative_memories=narrative_memories,
         )
 
-    def _build_financial_objectives(self, normalized_map: dict[DiscoveryDimension, Any]) -> FinancialObjectives:
-        frequency = normalized_map.get(DiscoveryDimension.LIQUIDITY_FREQUENCY)
-        return FinancialObjectives(
-            target_annual_return_pct=self._to_decimal(normalized_map.get(DiscoveryDimension.TARGET_ANNUAL_RETURN)),
-            investment_horizon_years=self._to_int(normalized_map.get(DiscoveryDimension.INVESTMENT_HORIZON)),
-            annual_liquidity_need=self._to_decimal(normalized_map.get(DiscoveryDimension.ANNUAL_LIQUIDITY_NEED)),
-            liquidity_frequency=LiquidityFrequency(str(frequency)) if frequency else None,
-        )
-
-    def _build_risk_boundaries(self, normalized_map: dict[DiscoveryDimension, Any]) -> RiskBoundaries:
-        return RiskBoundaries(
-            max_drawdown_limit_pct=self._to_decimal(normalized_map.get(DiscoveryDimension.MAX_DRAWDOWN_LIMIT)),
-            max_annual_volatility_pct=self._to_decimal(normalized_map.get(DiscoveryDimension.MAX_ANNUAL_VOLATILITY)),
-            max_leverage_ratio=self._to_decimal(normalized_map.get(DiscoveryDimension.MAX_LEVERAGE_RATIO)),
-            single_asset_cap_pct=self._to_decimal(normalized_map.get(DiscoveryDimension.SINGLE_ASSET_CAP)),
-        )
-
-    def _build_investment_constraints(self, normalized_map: dict[DiscoveryDimension, Any]) -> InvestmentConstraints:
-        return InvestmentConstraints(
-            blocked_sectors=list(normalized_map.get(DiscoveryDimension.BLOCKED_SECTORS) or []),
-            blocked_tickers=list(normalized_map.get(DiscoveryDimension.BLOCKED_TICKERS) or []),
-            base_currency=self._coerce_text(normalized_map.get(DiscoveryDimension.BASE_CURRENCY), uppercase=True),
-            tax_residency=self._coerce_text(normalized_map.get(DiscoveryDimension.TAX_RESIDENCY)),
-        )
-
-    def _build_account_background(self, normalized_map: dict[DiscoveryDimension, Any]) -> AccountBackground:
-        entity_type = normalized_map.get(DiscoveryDimension.ACCOUNT_ENTITY_TYPE)
-        execution_mode = normalized_map.get(DiscoveryDimension.EXECUTION_MODE)
-        return AccountBackground(
-            account_entity_type=AccountEntityType(str(entity_type)) if entity_type else None,
-            aum_allocated=self._to_decimal(normalized_map.get(DiscoveryDimension.AUM_ALLOCATED)),
-            execution_mode=ExecutionMode(str(execution_mode)) if execution_mode else None,
-        )
-
-    def _build_persona_traits(
+    def _build_draft_source_packet(
         self,
-        normalized_map: dict[DiscoveryDimension, Any],
-        answer_map: dict[DiscoveryDimension, str],
-    ) -> PersonaTraits:
-        return PersonaTraits(
-            financial_literacy=self._coerce_text(
-                normalized_map.get(DiscoveryDimension.FINANCIAL_LITERACY) or answer_map.get(DiscoveryDimension.FINANCIAL_LITERACY)
-            ),
-            wealth_origin_dna=self._coerce_text(
-                normalized_map.get(DiscoveryDimension.WEALTH_ORIGIN_DNA) or answer_map.get(DiscoveryDimension.WEALTH_ORIGIN_DNA)
-            ),
-            behavioral_risk_profile=self._coerce_text(
-                normalized_map.get(DiscoveryDimension.BEHAVIORAL_RISK_PROFILE) or answer_map.get(DiscoveryDimension.BEHAVIORAL_RISK_PROFILE)
-            ),
+        session: DiscoverySession,
+        readiness: DraftReadinessAssessment,
+        snapshot: WorkingProfileSnapshot,
+    ) -> ProfileDraftSourcePacket:
+        return ProfileDraftSourcePacket(
+            session_id=session.session_id,
+            owner_id=session.owner_id,
+            workflow_kind=session.workflow_kind,
+            source_profile_id=session.source_profile_id,
+            readiness=readiness,
+            section_coverage=session.section_coverage or self._build_section_coverage_from_session(session),
+            working_profile_snapshot=snapshot,
+            conversation_turns=list(session.conversation_turns),
+            accepted_interpretations=list(session.interpretation_history),
+            field_sources=self._build_draft_field_sources(session.interpretation_history),
+            evidence_count=len(snapshot.persona_evidence),
+            long_term_memory_count=len(snapshot.long_term_memories),
+            short_term_memory_count=len(snapshot.short_term_memories),
+            contextual_rule_count=len(snapshot.contextual_rules),
         )
 
-    def _build_contextual_rules(
+    def _build_draft_field_sources(
         self,
-        answer_map: dict[DiscoveryDimension, str],
-        financial_objectives: FinancialObjectives,
-        risk_boundaries: RiskBoundaries,
-        investment_constraints: InvestmentConstraints,
-        account_background: AccountBackground,
-    ) -> list[ContextualRuleCandidate]:
-        rules: list[ContextualRuleCandidate] = []
-        liquidity = answer_map.get(DiscoveryDimension.ANNUAL_LIQUIDITY_NEED, "")
-        if financial_objectives.annual_liquidity_need and financial_objectives.annual_liquidity_need > 0:
-            rules.append(
-                ContextualRuleCandidate(
-                    rule_text="Preserve liquidity reserves before increasing portfolio risk when recurring cash withdrawals are expected.",
-                    reason="Derived from annual liquidity requirements.",
-                )
-            )
-        if risk_boundaries.max_leverage_ratio == Decimal("0"):
-            rules.append(
-                ContextualRuleCandidate(
-                    rule_text="Do not use leverage in portfolio construction or execution for this mandate.",
-                    reason="Derived from the leverage boundary.",
-                )
-            )
-        if risk_boundaries.single_asset_cap_pct is not None:
-            rules.append(
-                ContextualRuleCandidate(
-                    rule_text="Continuously monitor single-asset concentration against the approved cap.",
-                    reason="Derived from the single-asset concentration boundary.",
-                )
-            )
-        if investment_constraints.blocked_sectors or investment_constraints.blocked_tickers:
-            rules.append(
-                ContextualRuleCandidate(
-                    rule_text="Treat blocked sectors and blocked tickers as non-overridable filter rules unless the profile itself is updated.",
-                    reason="Derived from explicit investment constraints.",
-                )
-            )
-        if account_background.execution_mode is ExecutionMode.ADVISORY:
-            rules.append(
-                ContextualRuleCandidate(
-                    rule_text="Require human confirmation before sending any trade for execution.",
-                    reason="Derived from advisory execution mode.",
-                )
-            )
-        if liquidity and re.search(r"\b(next|soon|month|quarter|year)\b", liquidity, re.IGNORECASE):
-            rules.append(
-                ContextualRuleCandidate(
-                    rule_text="Keep short-horizon liquidity events visible in portfolio planning until they pass.",
-                    reason="Derived from time-sensitive liquidity wording.",
-                )
-            )
-        return rules
+        interpretations: list[AcceptedInterpretationPacket],
+    ) -> list[ProfileDraftFieldSource]:
+        sources_by_path: dict[str, ProfileDraftFieldSource] = {}
+        for interpretation in interpretations:
+            packet = interpretation.packet
+            evidence_by_dimension: dict[DiscoveryDimension, list[str]] = {}
+            generic_evidence: list[str] = []
+            for snippet in packet.evidence_snippets:
+                excerpt = snippet.excerpt.strip()
+                if not excerpt:
+                    continue
+                if snippet.dimension is None:
+                    generic_evidence.append(excerpt)
+                else:
+                    evidence_by_dimension.setdefault(snippet.dimension, []).append(excerpt)
 
-    def _build_long_term_memories(
-        self,
-        answer_map: dict[DiscoveryDimension, str],
-        persona_traits: PersonaTraits,
-    ) -> list[NarrativeMemoryCandidate]:
-        items: list[NarrativeMemoryCandidate] = []
-        for dimension, theme in (
-            (DiscoveryDimension.WEALTH_ORIGIN_DNA, "wealth_origin_dna"),
-            (DiscoveryDimension.BEHAVIORAL_RISK_PROFILE, "behavioral_risk_profile"),
-            (DiscoveryDimension.FINANCIAL_LITERACY, "financial_literacy"),
-        ):
-            text = answer_map.get(dimension)
-            if text and len(text.split()) >= 8:
-                items.append(NarrativeMemoryCandidate(summary=text, theme=theme, source_dimension=dimension))
-        for item in profile_long_memory_candidates_from_traits(persona_traits):
-            if all(existing.summary != item.summary for existing in items):
-                items.append(item)
-        return items
+            dimensions = [update.dimension for update in packet.structured_field_updates]
+            dimensions.extend(update.dimension for update in packet.narrative_dimension_updates)
+            for dimension in dimensions:
+                field_path = self._field_path_for_dimension(dimension)
+                if field_path is None:
+                    continue
+                source = sources_by_path.setdefault(
+                    field_path,
+                    ProfileDraftFieldSource(field_path=field_path),
+                )
+                if dimension not in source.dimensions:
+                    source.dimensions.append(dimension)
+                if interpretation.interpretation_id not in source.interpretation_ids:
+                    source.interpretation_ids.append(interpretation.interpretation_id)
+                for excerpt in evidence_by_dimension.get(dimension, generic_evidence):
+                    if excerpt not in source.evidence_excerpts:
+                        source.evidence_excerpts.append(excerpt)
 
-    def _build_short_term_memories(
-        self,
-        answer_map: dict[DiscoveryDimension, str],
-        financial_objectives: FinancialObjectives,
-    ) -> list[dict[str, str]]:
-        items: list[dict[str, str]] = []
-        liquidity = answer_map.get(DiscoveryDimension.ANNUAL_LIQUIDITY_NEED)
-        if liquidity and re.search(r"\b(within|month|months|week|weeks|soon|upcoming|next)\b", liquidity, re.IGNORECASE):
-            items.append(
-                {
-                    "theme": "near_term_liquidity",
-                    "summary": liquidity,
-                    "source_dimension": DiscoveryDimension.ANNUAL_LIQUIDITY_NEED.value,
-                }
-            )
-        behavioral = answer_map.get(DiscoveryDimension.BEHAVIORAL_RISK_PROFILE)
-        if behavioral and re.search(r"\b(recent|lately|right now|currently|last week|last month|two weeks)\b", behavioral, re.IGNORECASE):
-            items.append(
-                {
-                    "theme": "recent_market_emotion",
-                    "summary": behavioral,
-                    "source_dimension": DiscoveryDimension.BEHAVIORAL_RISK_PROFILE.value,
-                }
-            )
-        if financial_objectives.liquidity_frequency in {LiquidityFrequency.MONTHLY, LiquidityFrequency.QUARTERLY}:
-            items.append(
-                {
-                    "theme": "recurring_cash_flow",
-                    "summary": f"Recurring liquidity cadence is {financial_objectives.liquidity_frequency.value}.",
-                    "source_dimension": DiscoveryDimension.LIQUIDITY_FREQUENCY.value,
-                }
-            )
-        return items
+        return list(sources_by_path.values())
+
+    def _field_path_for_dimension(self, dimension: DiscoveryDimension) -> str | None:
+        return {
+            DiscoveryDimension.TARGET_ANNUAL_RETURN: "financial_objectives.target_annual_return_pct",
+            DiscoveryDimension.INVESTMENT_HORIZON: "financial_objectives.investment_horizon_years",
+            DiscoveryDimension.ANNUAL_LIQUIDITY_NEED: "financial_objectives.annual_liquidity_need",
+            DiscoveryDimension.LIQUIDITY_FREQUENCY: "financial_objectives.liquidity_frequency",
+            DiscoveryDimension.MAX_DRAWDOWN_LIMIT: "risk_boundaries.max_drawdown_limit_pct",
+            DiscoveryDimension.MAX_ANNUAL_VOLATILITY: "risk_boundaries.max_annual_volatility_pct",
+            DiscoveryDimension.MAX_LEVERAGE_RATIO: "risk_boundaries.max_leverage_ratio",
+            DiscoveryDimension.SINGLE_ASSET_CAP: "risk_boundaries.single_asset_cap_pct",
+            DiscoveryDimension.BLOCKED_SECTORS: "investment_constraints.blocked_sectors",
+            DiscoveryDimension.BLOCKED_TICKERS: "investment_constraints.blocked_tickers",
+            DiscoveryDimension.BASE_CURRENCY: "investment_constraints.base_currency",
+            DiscoveryDimension.TAX_RESIDENCY: "investment_constraints.tax_residency",
+            DiscoveryDimension.ACCOUNT_ENTITY_TYPE: "account_background.account_entity_type",
+            DiscoveryDimension.AUM_ALLOCATED: "account_background.aum_allocated",
+            DiscoveryDimension.EXECUTION_MODE: "account_background.execution_mode",
+            DiscoveryDimension.FINANCIAL_LITERACY: "persona_traits.financial_literacy",
+            DiscoveryDimension.WEALTH_ORIGIN_DNA: "persona_traits.wealth_origin_dna",
+            DiscoveryDimension.BEHAVIORAL_RISK_PROFILE: "persona_traits.behavioral_risk_profile",
+        }.get(dimension)
 
     def _derive_risk_budget(self, risk_boundaries: RiskBoundaries) -> RiskBudget:
         conservative_signals = 0
@@ -1079,6 +1088,14 @@ class ProfileDiscoveryService:
         except (InvalidOperation, ValueError):
             return None
 
+    def _parse_decimal_strict(self, dimension: DiscoveryDimension, value: Any) -> Decimal | None:
+        parsed = self._to_decimal(value)
+        if parsed is None and value not in (None, ""):
+            raise InvalidDiscoveryInterpretationError(
+                f"{dimension.value} must use FinKernel's predefined decimal format."
+            )
+        return parsed
+
     def _to_int(self, value: Any) -> int | None:
         if value in (None, ""):
             return None
@@ -1087,6 +1104,22 @@ class ProfileDiscoveryService:
         except (TypeError, ValueError):
             return None
 
+    def _parse_int_strict(self, dimension: DiscoveryDimension, value: Any) -> int | None:
+        parsed = self._to_int(value)
+        if parsed is None and value not in (None, ""):
+            raise InvalidDiscoveryInterpretationError(
+                f"{dimension.value} must use FinKernel's predefined integer format."
+            )
+        return parsed
+
+    def _parse_enum_strict(self, enum_type, dimension: DiscoveryDimension, value: Any):
+        try:
+            return enum_type(str(value))
+        except ValueError as exc:
+            raise InvalidDiscoveryInterpretationError(
+                f"{dimension.value} must use one of FinKernel's predefined enum values."
+            ) from exc
+
     def _coerce_text(self, value: Any, *, uppercase: bool = False) -> str | None:
         if value in (None, ""):
             return None
@@ -1094,6 +1127,9 @@ class ProfileDiscoveryService:
         if not text:
             return None
         return text.upper() if uppercase else text
+
+    def _stringify(self, value: Any) -> str:
+        return "" if value in (None, "") else str(value)
 
     def _slugify_profile_id(self, preferred_name: str, owner_id: str) -> str:
         base = re.sub(r"[^a-z0-9]+", "-", preferred_name.lower()).strip("-") or "profile"
@@ -1108,26 +1144,420 @@ class ProfileDiscoveryService:
     def _normalize_dimensions(self, dimensions: list[DiscoveryDimension]) -> list[DiscoveryDimension]:
         return list(dict.fromkeys(dimensions))
 
-    def _reset_target_dimensions(self, session: DiscoverySession, dimensions: list[DiscoveryDimension]) -> None:
+    def _allowed_dimensions_for_section(
+        self,
+        session: DiscoverySession,
+        section: DiscoveryPillar,
+    ) -> list[DiscoveryDimension]:
+        target_dimensions = set(session.target_dimensions or ALL_REQUIRED_DIMENSIONS)
+        return [dimension for dimension in PILLAR_DIMENSIONS[section] if dimension in target_dimensions]
+
+    def _validate_interpretation_packet(
+        self,
+        session: DiscoverySession,
+        packet: DiscoveryInterpretationPacket,
+    ) -> list[DiscoveryDimension]:
+        allowed_dimensions = self._allowed_dimensions_for_section(session, packet.section)
+        if not allowed_dimensions:
+            raise InvalidDiscoveryInterpretationError(
+                f"{packet.section.value} is not part of the current discovery pass."
+            )
+
+        invalid_covered = [dimension for dimension in packet.covered_dimensions if dimension not in allowed_dimensions]
+        invalid_structured = [update.dimension for update in packet.structured_field_updates if update.dimension not in allowed_dimensions]
+        invalid_narrative = [update.dimension for update in packet.narrative_dimension_updates if update.dimension not in allowed_dimensions]
+
+        invalid_dimensions = list(dict.fromkeys(invalid_covered + invalid_structured + invalid_narrative))
+        if invalid_dimensions:
+            raise InvalidDiscoveryInterpretationError(
+                "The interpretation packet updated dimensions outside the current section scope: "
+                + ", ".join(dimension.value for dimension in invalid_dimensions)
+            )
+
+        duplicated_dimensions = self._find_duplicate_dimensions(packet.covered_dimensions)
+        duplicated_dimensions.extend(
+            dimension
+            for dimension in self._find_duplicate_dimensions([update.dimension for update in packet.structured_field_updates])
+            if dimension not in duplicated_dimensions
+        )
+        duplicated_dimensions.extend(
+            dimension
+            for dimension in self._find_duplicate_dimensions([update.dimension for update in packet.narrative_dimension_updates])
+            if dimension not in duplicated_dimensions
+        )
+        if duplicated_dimensions:
+            raise InvalidDiscoveryInterpretationError(
+                "The interpretation packet repeated dimensions in the same turn: "
+                + ", ".join(dimension.value for dimension in duplicated_dimensions)
+            )
+
+        invalid_gap_dimensions = [
+            issue.dimension
+            for issue in packet.dimension_remaining_gaps
+            if issue.dimension is not None and issue.dimension not in allowed_dimensions
+        ]
+        invalid_conflict_dimensions = [
+            issue.dimension
+            for issue in packet.dimension_conflict_notes
+            if issue.dimension is not None and issue.dimension not in allowed_dimensions
+        ]
+        invalid_issue_dimensions = list(dict.fromkeys(invalid_gap_dimensions + invalid_conflict_dimensions))
+        if invalid_issue_dimensions:
+            raise InvalidDiscoveryInterpretationError(
+                "The interpretation packet attached gaps or conflicts to dimensions outside the current section scope: "
+                + ", ".join(dimension.value for dimension in invalid_issue_dimensions)
+            )
+
+        if packet.section_complete and (
+            packet.remaining_gaps
+            or packet.dimension_remaining_gaps
+            or packet.conflict_notes
+            or packet.dimension_conflict_notes
+        ):
+            raise InvalidDiscoveryInterpretationError(
+                "section_complete cannot be true while unresolved gaps or conflicts are still present."
+            )
+
+        return allowed_dimensions
+
+    def _clean_issue_notes(self, notes: list[str]) -> list[str]:
+        return list(dict.fromkeys(note.strip() for note in notes if note.strip()))
+
+    def _dimension_issue_notes(self, issues: list[DimensionIssue]) -> dict[DiscoveryDimension, list[str]]:
+        notes_by_dimension: dict[DiscoveryDimension, list[str]] = {}
+        for issue in issues:
+            if issue.dimension is None:
+                continue
+            note = issue.note.strip()
+            if not note:
+                continue
+            existing = notes_by_dimension.setdefault(issue.dimension, [])
+            if note not in existing:
+                existing.append(note)
+        return notes_by_dimension
+
+    def _section_issue_notes(self, issues: list[DimensionIssue]) -> list[str]:
+        return list(dict.fromkeys(issue.note.strip() for issue in issues if issue.dimension is None and issue.note.strip()))
+
+    def _find_duplicate_dimensions(self, dimensions: list[DiscoveryDimension]) -> list[DiscoveryDimension]:
+        seen: set[DiscoveryDimension] = set()
+        duplicates: list[DiscoveryDimension] = []
+        for dimension in dimensions:
+            if dimension in seen and dimension not in duplicates:
+                duplicates.append(dimension)
+            seen.add(dimension)
+        return duplicates
+
+    def _dimension_requires_more_work(self, state: DimensionState) -> bool:
+        return state.coverage_score < 2 or bool(state.pending_gaps) or state.conflict_flag
+
+    def _mark_dimensions_for_refresh(self, session: DiscoverySession, dimensions: list[DiscoveryDimension]) -> None:
         for dimension in self._normalize_dimensions(dimensions):
             state = self._get_dimension_state(session, dimension)
             state.coverage_score = 0
             state.confidence_score = 0
+            state.evidence_score = 0
             state.depth_score = 0
             state.conflict_flag = False
-            state.last_question_id = None
             state.last_updated_at = None
             state.extracted_facts = []
-            state.pending_gaps = []
+            state.pending_gaps = ["This dimension still needs fresh discovery in the current update pass."]
             state.normalized_value = None
 
-    def _build_update_trigger(self, update_choice: PersonaUpdateChoice | None, target_dimensions: list[DiscoveryDimension]) -> str:
-        if update_choice is not None:
-            return f"assess_persona:{update_choice.value}"
-        if target_dimensions:
-            joined = ",".join(dimension.value for dimension in target_dimensions)
-            return f"assess_persona:resume_missing_sections:{joined}"
-        return "assess_persona:update"
+    def _build_section_coverage_from_session(
+        self,
+        session: DiscoverySession,
+    ) -> list[SectionCoverageSnapshot]:
+        states = {state.dimension: state for state in session.dimension_states}
+        target_dimensions = set(session.target_dimensions or ALL_REQUIRED_DIMENSIONS)
+        snapshots: list[SectionCoverageSnapshot] = []
+        for pillar, dimensions in PILLAR_DIMENSIONS.items():
+            section_states = [states[dimension] for dimension in dimensions]
+            section_target_dimensions = [dimension for dimension in dimensions if dimension in target_dimensions]
+            covered_dimensions = [
+                state.dimension
+                for state in section_states
+                if state.coverage_score >= 2 and not state.pending_gaps
+            ]
+            outstanding_dimensions = [
+                dimension
+                for dimension in section_target_dimensions
+                if self._dimension_requires_more_work(states[dimension])
+            ]
+            touched_dimensions = [state.dimension for state in section_states if state.coverage_score > 0 or state.extracted_facts]
+            progress_percent = int(round((len(covered_dimensions) / len(dimensions)) * 100)) if dimensions else 0
+            if len(covered_dimensions) == len(dimensions):
+                status = SectionCoverageStatus.COVERED
+            elif touched_dimensions:
+                status = SectionCoverageStatus.IN_PROGRESS
+            else:
+                status = SectionCoverageStatus.NOT_STARTED
+
+            remaining_gaps = [
+                gap
+                for state in section_states
+                for gap in state.pending_gaps
+            ]
+            conflict_notes = [
+                f"{state.dimension.value} still contains unresolved conflicting signals."
+                for state in section_states
+                if state.conflict_flag
+            ]
+            confidence_label = self._confidence_label_from_scores(section_states)
+            evidence_quality_label = self._evidence_quality_label_from_scores(section_states)
+            blocked_by_conflicts = any(state.conflict_flag for state in section_states)
+            last_updated_at = max(
+                (state.last_updated_at for state in section_states if state.last_updated_at is not None),
+                default=None,
+            )
+
+            snapshots.append(
+                SectionCoverageSnapshot(
+                    section=pillar,
+                    status=status,
+                    target_dimensions=section_target_dimensions,
+                    outstanding_dimensions=outstanding_dimensions,
+                    covered_dimensions=covered_dimensions,
+                    covered_dimension_count=len(covered_dimensions),
+                    total_dimension_count=len(dimensions),
+                    progress_percent=progress_percent,
+                    remaining_gaps=list(dict.fromkeys(remaining_gaps)),
+                    conflict_notes=list(dict.fromkeys(conflict_notes)),
+                    confidence_label=confidence_label,
+                    evidence_quality_label=evidence_quality_label,
+                    blocked_by_conflicts=blocked_by_conflicts,
+                    last_updated_at=last_updated_at,
+                )
+            )
+        return snapshots
+
+    def _build_discovery_state(self, session: DiscoverySession) -> ProfileDiscoveryState:
+        section_coverage = session.section_coverage or self._build_section_coverage_from_session(session)
+        working_snapshot = session.working_profile_snapshot or WorkingProfileSnapshot()
+        current_section = self._next_incomplete_section(section_coverage)
+        readiness = self._build_readiness(session)
+        return ProfileDiscoveryState(
+            session_id=session.session_id,
+            owner_id=session.owner_id,
+            workflow_kind=session.workflow_kind,
+            status=session.status,
+            source_profile_id=session.source_profile_id,
+            current_section=current_section,
+            starter_question=self._build_starter_question(session, current_section, section_coverage),
+            target_dimensions=session.target_dimensions,
+            section_coverage=section_coverage,
+            working_profile_snapshot=working_snapshot,
+            recent_turns=session.conversation_turns[-5:],
+            recent_interpretations=session.interpretation_history[-5:],
+            notes=readiness.notes,
+        )
+
+    def _next_incomplete_section(self, section_coverage: list[SectionCoverageSnapshot]) -> DiscoveryPillar | None:
+        for snapshot in section_coverage:
+            if snapshot.status is not SectionCoverageStatus.COVERED:
+                return snapshot.section
+        return None
+
+    def _build_starter_question(
+        self,
+        session: DiscoverySession,
+        current_section: DiscoveryPillar | None,
+        section_coverage: list[SectionCoverageSnapshot],
+    ) -> DiscoveryQuestion | None:
+        if current_section is None:
+            return None
+        snapshot = next((item for item in section_coverage if item.section is current_section), None)
+        if snapshot is None or snapshot.status is not SectionCoverageStatus.NOT_STARTED:
+            return None
+        prompt_text, why_this_matters = SECTION_STARTER_QUESTIONS[current_section]
+        return DiscoveryQuestion(
+            question_id=f"starter-{session.session_id}-{current_section.value}",
+            session_id=session.session_id,
+            dimension=PILLAR_DIMENSIONS[current_section][0],
+            pillar=current_section,
+            question_type=DiscoveryQuestionType.STARTER,
+            source_type=DiscoveryQuestionSource.STARTER_BANK,
+            prompt_text=prompt_text,
+            why_this_matters=why_this_matters,
+            expected_answer_shape=ExpectedAnswerShape.OPEN_TEXT,
+        )
+
+    def _default_evidence_dimension(
+        self,
+        packet: DiscoveryInterpretationPacket,
+        touched_dimensions: set[DiscoveryDimension],
+    ) -> DiscoveryDimension | None:
+        if packet.covered_dimensions:
+            return packet.covered_dimensions[0]
+        if packet.structured_field_updates:
+            return packet.structured_field_updates[0].dimension
+        if packet.narrative_dimension_updates:
+            return packet.narrative_dimension_updates[0].dimension
+        if touched_dimensions:
+            return sorted(touched_dimensions, key=lambda dimension: dimension.value)[0]
+        return None
+
+    def _apply_structured_field_update(self, snapshot: WorkingProfileSnapshot, update: StructuredFieldUpdate) -> Any:
+        value = self._validate_structured_field_value(update.dimension, update.value)
+        if update.dimension is DiscoveryDimension.TARGET_ANNUAL_RETURN:
+            snapshot.financial_objectives.target_annual_return_pct = value
+        elif update.dimension is DiscoveryDimension.INVESTMENT_HORIZON:
+            snapshot.financial_objectives.investment_horizon_years = value
+        elif update.dimension is DiscoveryDimension.ANNUAL_LIQUIDITY_NEED:
+            snapshot.financial_objectives.annual_liquidity_need = value
+        elif update.dimension is DiscoveryDimension.LIQUIDITY_FREQUENCY:
+            snapshot.financial_objectives.liquidity_frequency = value
+        elif update.dimension is DiscoveryDimension.MAX_DRAWDOWN_LIMIT:
+            snapshot.risk_boundaries.max_drawdown_limit_pct = value
+        elif update.dimension is DiscoveryDimension.MAX_ANNUAL_VOLATILITY:
+            snapshot.risk_boundaries.max_annual_volatility_pct = value
+        elif update.dimension is DiscoveryDimension.MAX_LEVERAGE_RATIO:
+            snapshot.risk_boundaries.max_leverage_ratio = value
+        elif update.dimension is DiscoveryDimension.SINGLE_ASSET_CAP:
+            snapshot.risk_boundaries.single_asset_cap_pct = value
+        elif update.dimension is DiscoveryDimension.BLOCKED_SECTORS:
+            snapshot.investment_constraints.blocked_sectors = value or []
+        elif update.dimension is DiscoveryDimension.BLOCKED_TICKERS:
+            snapshot.investment_constraints.blocked_tickers = value or []
+        elif update.dimension is DiscoveryDimension.BASE_CURRENCY:
+            snapshot.investment_constraints.base_currency = value
+        elif update.dimension is DiscoveryDimension.TAX_RESIDENCY:
+            snapshot.investment_constraints.tax_residency = value
+        elif update.dimension is DiscoveryDimension.ACCOUNT_ENTITY_TYPE:
+            snapshot.account_background.account_entity_type = value
+        elif update.dimension is DiscoveryDimension.AUM_ALLOCATED:
+            snapshot.account_background.aum_allocated = value
+        elif update.dimension is DiscoveryDimension.EXECUTION_MODE:
+            snapshot.account_background.execution_mode = value
+        else:
+            raise InvalidDiscoveryInterpretationError(f"{update.dimension.value} is not a structured field.")
+        return value
+
+    def _apply_narrative_dimension_update(self, snapshot: WorkingProfileSnapshot, update: NarrativeDimensionUpdate) -> None:
+        if update.dimension is DiscoveryDimension.FINANCIAL_LITERACY:
+            snapshot.persona_traits.financial_literacy = update.text.strip()
+            return
+        if update.dimension is DiscoveryDimension.WEALTH_ORIGIN_DNA:
+            snapshot.persona_traits.wealth_origin_dna = update.text.strip()
+            return
+        if update.dimension is DiscoveryDimension.BEHAVIORAL_RISK_PROFILE:
+            snapshot.persona_traits.behavioral_risk_profile = update.text.strip()
+            return
+        raise InvalidDiscoveryInterpretationError(f"{update.dimension.value} is not a narrative profile dimension.")
+
+    def _append_evidence_snippet(self, snapshot: WorkingProfileSnapshot, snippet: EvidenceSnippet) -> None:
+        candidate = {
+            "dimension": snippet.dimension.value if snippet.dimension else None,
+            "excerpt": snippet.excerpt.strip(),
+            "rationale": snippet.rationale,
+            "captured_at": datetime.now(UTC).isoformat(),
+        }
+        if candidate["excerpt"] and candidate not in snapshot.persona_evidence:
+            snapshot.persona_evidence.append(candidate)
+
+    def _append_long_term_memory(self, snapshot: WorkingProfileSnapshot, candidate: NarrativeMemoryCandidate) -> None:
+        item = candidate.model_dump(mode="json")
+        if item not in snapshot.long_term_memories:
+            snapshot.long_term_memories.append(item)
+
+    def _append_short_term_memory(self, snapshot: WorkingProfileSnapshot, candidate: ShortTermMemoryCandidate) -> None:
+        item = {
+            "theme": candidate.theme,
+            "summary": candidate.summary,
+            "source_dimension": candidate.source_dimension.value if candidate.source_dimension else None,
+        }
+        if item not in snapshot.short_term_memories:
+            snapshot.short_term_memories.append(item)
+
+    def _append_contextual_rule(self, snapshot: WorkingProfileSnapshot, candidate: ContextualRuleCandidate) -> None:
+        item = candidate.model_dump(mode="json")
+        if item not in snapshot.contextual_rules:
+            snapshot.contextual_rules.append(item)
+
+    def _validate_structured_field_value(self, dimension: DiscoveryDimension, value: Any) -> Any:
+        if value is None:
+            return None
+        if dimension in {
+            DiscoveryDimension.TARGET_ANNUAL_RETURN,
+            DiscoveryDimension.ANNUAL_LIQUIDITY_NEED,
+            DiscoveryDimension.MAX_DRAWDOWN_LIMIT,
+            DiscoveryDimension.MAX_ANNUAL_VOLATILITY,
+            DiscoveryDimension.MAX_LEVERAGE_RATIO,
+            DiscoveryDimension.SINGLE_ASSET_CAP,
+            DiscoveryDimension.AUM_ALLOCATED,
+        }:
+            return self._parse_decimal_strict(dimension, value)
+        if dimension is DiscoveryDimension.INVESTMENT_HORIZON:
+            return self._parse_int_strict(dimension, value)
+        if dimension is DiscoveryDimension.LIQUIDITY_FREQUENCY:
+            return self._parse_enum_strict(LiquidityFrequency, dimension, value)
+        if dimension is DiscoveryDimension.ACCOUNT_ENTITY_TYPE:
+            return self._parse_enum_strict(AccountEntityType, dimension, value)
+        if dimension is DiscoveryDimension.EXECUTION_MODE:
+            return self._parse_enum_strict(ExecutionMode, dimension, value)
+        if dimension in {DiscoveryDimension.BLOCKED_SECTORS, DiscoveryDimension.BLOCKED_TICKERS}:
+            if not isinstance(value, list):
+                raise InvalidDiscoveryInterpretationError(f"{dimension.value} must be returned as a list.")
+            cleaned = {str(item).strip() for item in value if str(item).strip()}
+            return sorted(cleaned)
+        if dimension is DiscoveryDimension.BASE_CURRENCY:
+            text = self._coerce_text(value, uppercase=True)
+            return text
+        if dimension is DiscoveryDimension.TAX_RESIDENCY:
+            return self._coerce_text(value)
+        raise InvalidDiscoveryInterpretationError(f"{dimension.value} is not a supported structured field.")
+
+    def _confidence_score_from_label(self, label: ConfidenceLabel) -> int:
+        return {
+            ConfidenceLabel.LOW: 1,
+            ConfidenceLabel.MEDIUM: 2,
+            ConfidenceLabel.HIGH: 3,
+        }[label]
+
+    def _confidence_label_from_scores(self, states: list[DimensionState]) -> ConfidenceLabel:
+        scored = [state.confidence_score for state in states if state.coverage_score > 0]
+        if not scored:
+            return ConfidenceLabel.LOW
+        minimum = min(scored)
+        if minimum >= 3:
+            return ConfidenceLabel.HIGH
+        if minimum >= 2:
+            return ConfidenceLabel.MEDIUM
+        return ConfidenceLabel.LOW
+
+    def _evidence_quality_label_from_scores(self, states: list[DimensionState]) -> EvidenceQualityLabel:
+        scored = [state.evidence_score for state in states if state.coverage_score > 0]
+        if not scored:
+            return EvidenceQualityLabel.LOW
+        minimum = min(scored)
+        if minimum >= 3:
+            return EvidenceQualityLabel.HIGH
+        if minimum >= 2:
+            return EvidenceQualityLabel.MEDIUM
+        return EvidenceQualityLabel.LOW
+
+    def _build_readiness(self, session: DiscoverySession) -> DraftReadinessAssessment:
+        target_dimensions = self._normalize_dimensions(session.target_dimensions or list(ALL_REQUIRED_DIMENSIONS))
+        unmet_dimensions: list[DiscoveryDimension] = []
+        notes: list[str] = []
+        for dimension in target_dimensions:
+            state = self._get_dimension_state(session, dimension)
+            if state.coverage_score < 2:
+                unmet_dimensions.append(dimension)
+                notes.append(f"{dimension.value} still needs confirmed coverage.")
+                continue
+            if state.pending_gaps:
+                unmet_dimensions.append(dimension)
+                notes.extend(f"{dimension.value}: {gap}" for gap in state.pending_gaps)
+                continue
+            if state.conflict_flag:
+                unmet_dimensions.append(dimension)
+                notes.append(f"{dimension.value} still contains unresolved conflicting signals.")
+        return DraftReadinessAssessment(
+            ready=not unmet_dimensions,
+            unmet_dimensions=unmet_dimensions,
+            notes=list(dict.fromkeys(notes)),
+        )
 
     def _get_dimension_state(self, session: DiscoverySession, dimension: DiscoveryDimension) -> DimensionState:
         for state in session.dimension_states:
@@ -1135,14 +1565,20 @@ class ProfileDiscoveryService:
                 return state
         raise KeyError(f"Missing dimension state for {dimension.value}")
 
-    def _load_session_with_question(self, session_id: str) -> tuple[DiscoverySession, DiscoveryQuestion | None]:
-        session = self.get_session(session_id)
-        question = self._find_question(session_id=session_id, question_id=session.current_question_id)
-        return session, question
+    def _session_payload(self, session: DiscoverySession) -> dict[str, Any]:
+        return session.model_dump(
+            mode="json",
+            exclude={"conversation_turns", "interpretation_history"},
+        )
 
-    def _save_session(self, session: DiscoverySession, *, next_question: DiscoveryQuestion | None) -> None:
-        record = session.model_dump(mode="json")
-        record["current_question"] = next_question.model_dump(mode="json") if next_question is not None else None
+    def _save_session(
+        self,
+        session: DiscoverySession,
+        *,
+        new_turn: DiscoveryConversationTurn | None = None,
+        new_interpretation: AcceptedInterpretationPacket | None = None,
+    ) -> None:
+        record = self._session_payload(session)
         with self._session_scope() as db_session:
             self.session_repository.upsert(
                 db_session,
@@ -1153,6 +1589,30 @@ class ProfileDiscoveryService:
                     payload=record,
                 ),
             )
+            if new_turn is not None:
+                self.turn_repository.add(
+                    db_session,
+                    DiscoveryConversationTurnModel(
+                        turn_id=new_turn.turn_id,
+                        session_id=session.session_id,
+                        owner_id=session.owner_id,
+                        section=new_turn.section.value,
+                        payload=new_turn.model_dump(mode="json"),
+                        answered_at=new_turn.answered_at,
+                    ),
+                )
+            if new_interpretation is not None:
+                self.interpretation_repository.add(
+                    db_session,
+                    DiscoveryInterpretationModel(
+                        interpretation_id=new_interpretation.interpretation_id,
+                        session_id=session.session_id,
+                        owner_id=session.owner_id,
+                        section=new_interpretation.packet.section.value,
+                        payload=new_interpretation.model_dump(mode="json"),
+                        stored_at=new_interpretation.stored_at,
+                    ),
+                )
 
     def _save_draft(self, draft: ProfileDraft) -> None:
         with self._session_scope() as db_session:
@@ -1166,20 +1626,10 @@ class ProfileDiscoveryService:
                 ),
             )
 
-    def _find_question(self, *, session_id: str, question_id: str | None) -> DiscoveryQuestion | None:
-        if question_id is None:
-            return None
-        session = self.get_session(session_id)
-        if session.current_question is not None and session.current_question.question_id == question_id:
-            return session.current_question
-        return None
-
     def _mark_session_completed(self, session_id: str) -> None:
         session = self.get_session(session_id)
         session.status = DiscoverySessionStatus.COMPLETED
-        session.current_question_id = None
-        session.current_question = None
-        self._save_session(session, next_question=None)
+        self._save_session(session)
 
     @contextmanager
     def _session_scope(self) -> Iterator[Session]:
@@ -1192,15 +1642,3 @@ class ProfileDiscoveryService:
             raise
         finally:
             session.close()
-
-
-def profile_long_memory_candidates_from_traits(persona_traits: PersonaTraits) -> list[NarrativeMemoryCandidate]:
-    items: list[NarrativeMemoryCandidate] = []
-    for dimension, theme, text in (
-        (DiscoveryDimension.FINANCIAL_LITERACY, "financial_literacy", persona_traits.financial_literacy),
-        (DiscoveryDimension.WEALTH_ORIGIN_DNA, "wealth_origin_dna", persona_traits.wealth_origin_dna),
-        (DiscoveryDimension.BEHAVIORAL_RISK_PROFILE, "behavioral_risk_profile", persona_traits.behavioral_risk_profile),
-    ):
-        if text and len(text.split()) >= 10:
-            items.append(NarrativeMemoryCandidate(summary=text, theme=theme, source_dimension=dimension))
-    return items

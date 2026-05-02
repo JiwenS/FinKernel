@@ -5,13 +5,13 @@ from fastapi import APIRouter, Depends, Response
 from finkernel.schemas.discovery import (
     AssessPersonaRequest,
     ConfirmProfileDraftRequest,
-    DiscoveryQuestion,
+    DiscoveryInterpretationPacket,
+    ProfileDiscoveryState,
     DiscoverySession,
     PersonaAssessmentState,
     ProfileDraft,
     ReviewProfileRequest,
     StartDiscoveryRequest,
-    SubmitDiscoveryAnswerRequest,
 )
 from finkernel.schemas.profile import (
     AppendProfileMemoryRequest,
@@ -23,6 +23,7 @@ from finkernel.schemas.profile import (
     ProfileOnboardingStatus,
     RiskProfileSummary,
     SavePersonaMarkdownRequest,
+    SaveProfileMarkdownRequest,
 )
 from finkernel.services.profile_discovery import ProfileDiscoveryService
 from finkernel.services.profiles import ProfileStore
@@ -49,6 +50,11 @@ def assess_persona(payload: AssessPersonaRequest, discovery_service: ProfileDisc
     except Exception as exc:
         raise_for_profile_error(exc)
         raise
+
+
+@router.post("/profiles/assess-profile", response_model=PersonaAssessmentState)
+def assess_profile(payload: AssessPersonaRequest, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> PersonaAssessmentState:
+    return assess_persona(payload, discovery_service)
 
 
 @router.get("/profiles/{profile_id}", response_model=PersonaProfile)
@@ -79,6 +85,11 @@ def get_profile_persona_markdown(profile_id: str, version: int | None = None, di
         raise
 
 
+@router.get("/profiles/{profile_id}/profile.md", response_class=Response)
+def get_profile_markdown(profile_id: str, version: int | None = None, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> Response:
+    return get_profile_persona_markdown(profile_id, version, discovery_service)
+
+
 @router.get("/profiles/{profile_id}/persona-sources", response_model=PersonaSourcePacket)
 def get_profile_persona_sources(profile_id: str, version: int | None = None, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> PersonaSourcePacket:
     try:
@@ -88,10 +99,24 @@ def get_profile_persona_sources(profile_id: str, version: int | None = None, dis
         raise
 
 
+@router.get("/profiles/{profile_id}/profile-sources", response_model=PersonaSourcePacket)
+def get_profile_sources(profile_id: str, version: int | None = None, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> PersonaSourcePacket:
+    return get_profile_persona_sources(profile_id, version, discovery_service)
+
+
 @router.put("/profiles/{profile_id}/persona", response_model=PersonaProfile)
 def save_profile_persona_markdown(profile_id: str, payload: SavePersonaMarkdownRequest, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> PersonaProfile:
     try:
         return discovery_service.save_persona_markdown(profile_id=profile_id, persona_markdown=payload.persona_markdown, version=payload.version)
+    except Exception as exc:
+        raise_for_profile_error(exc)
+        raise
+
+
+@router.put("/profiles/{profile_id}/profile-markdown", response_model=PersonaProfile)
+def save_profile_markdown(profile_id: str, payload: SaveProfileMarkdownRequest, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> PersonaProfile:
+    try:
+        return discovery_service.save_profile_markdown(profile_id=profile_id, profile_markdown=payload.profile_markdown, version=payload.version)
     except Exception as exc:
         raise_for_profile_error(exc)
         raise
@@ -111,19 +136,23 @@ def start_profile_discovery(payload: StartDiscoveryRequest, discovery_service: P
     return discovery_service.start_discovery(owner_id=payload.owner_id, preferred_profile_name=payload.preferred_profile_name)
 
 
-@router.get("/profiles/discovery/sessions/{session_id}/next-question", response_model=DiscoveryQuestion | None)
-def get_next_profile_question(session_id: str, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> DiscoveryQuestion | None:
+@router.get("/profiles/discovery/sessions/{session_id}/state", response_model=ProfileDiscoveryState)
+def get_profile_discovery_state(session_id: str, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> ProfileDiscoveryState:
     try:
-        return discovery_service.get_next_question(session_id)
+        return discovery_service.get_discovery_state(session_id)
     except Exception as exc:
         raise_for_profile_error(exc)
         raise
 
 
-@router.post("/profiles/discovery/sessions/{session_id}/answers", response_model=DiscoverySession)
-def submit_profile_discovery_answer(session_id: str, payload: SubmitDiscoveryAnswerRequest, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> DiscoverySession:
+@router.post("/profiles/discovery/sessions/{session_id}/interpretation", response_model=ProfileDiscoveryState)
+def submit_profile_discovery_interpretation(
+    session_id: str,
+    payload: DiscoveryInterpretationPacket,
+    discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service),
+) -> ProfileDiscoveryState:
     try:
-        return discovery_service.submit_answer(session_id=session_id, answer_text=payload.answer, question_id=payload.question_id)
+        return discovery_service.submit_interpretation(session_id=session_id, packet=payload)
     except Exception as exc:
         raise_for_profile_error(exc)
         raise
@@ -146,6 +175,11 @@ def confirm_profile_draft(draft_id: str, payload: ConfirmProfileDraftRequest, di
     except Exception as exc:
         raise_for_profile_error(exc)
         raise
+
+
+@router.post("/profiles/discovery/drafts/{draft_id}/confirm-profile", response_model=dict)
+def confirm_profile_draft_profile_alias(draft_id: str, payload: ConfirmProfileDraftRequest, discovery_service: ProfileDiscoveryService = Depends(get_profile_discovery_service)) -> dict:
+    return confirm_profile_draft(draft_id, payload, discovery_service)
 
 
 @router.post("/profiles/{profile_id}/review", response_model=DiscoverySession)

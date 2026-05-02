@@ -19,8 +19,8 @@ Symptom:
 
 Fix:
 
-- continue calling `GET /api/profiles/discovery/sessions/{session_id}/next-question`
-- answer every required dimension before generating the draft
+- inspect `GET /api/profiles/discovery/sessions/{session_id}/state`
+- keep submitting interpretation packets until every required section is covered before generating the draft
 
 ## MCP tools are registered but not used first
 

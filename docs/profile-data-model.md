@@ -1,6 +1,6 @@
-# Persona Profiles
+# Profile Data Model
 
-FinKernel stores a versioned personal risk profile in `PersonaProfile`.
+FinKernel stores a versioned personal risk profile in its canonical profile model.
 
 This data model is a Phase 1 artifact: it is the canonical representation of
 the user's risk profile and should not be treated as a general portfolio or
@@ -9,6 +9,17 @@ execution model.
 For the full design contract, see:
 
 - `docs/profile-schema-design.md`
+
+## Naming rule
+
+Use these terms consistently:
+
+- `profile` = the whole stored object and user-facing artifact
+- `persona` = one subcomponent inside the profile, mainly the personality and behavioral layer
+
+Some technical identifiers may still include legacy names such as
+`PersonaProfile`, `persona_evidence`, or `persona_markdown`. Those are
+compatibility-oriented internal names, not the preferred product terminology.
 
 ## Key fields
 
@@ -28,8 +39,8 @@ For the full design contract, see:
 - `contextual_rules`
 - `long_term_memories`
 - `short_term_memories`
-- `persona_evidence`
-- `persona_markdown`
+- legacy `persona_evidence` field for the evidence layer
+- legacy `persona_markdown` field for the final profile markdown artifact
 
 ## Structured boundary model
 
@@ -67,7 +78,7 @@ Core examples inside those sections include:
   `financial_literacy`, `wealth_origin_dna`, and `behavioral_risk_profile`
 - `long_term_memories` store durable facts that should keep shaping the profile
 - `short_term_memories` store time-sensitive context that can expire
-- `persona_evidence` keeps direct dialogue excerpts as the source-of-truth layer
+- the evidence layer keeps direct dialogue excerpts as the source-of-truth layer
 
 ## Versioning
 
@@ -75,7 +86,7 @@ Each confirmed review creates a new version.
 
 - only one version should be active at a time
 - previous active versions become `superseded`
-- `persona_markdown` belongs to the version that produced it
+- the final profile markdown artifact belongs to the version that produced it
 
 ## Derived summary fields
 

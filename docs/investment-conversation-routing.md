@@ -28,12 +28,18 @@ For explicit persona-building or persona-maintenance requests, start with:
 ## If no active profile exists
 
 1. explain that profile-scoped advice requires a personal risk profile first
-2. call `start_profile_discovery`
-3. continue with:
-   - `get_next_profile_question`
-   - `submit_profile_discovery_answer`
-4. call `generate_profile_draft`
-5. confirm the draft once the persona artifact is ready
+2. prefer `assess_persona` as the orchestration entrypoint into profile creation
+3. continue the returned profile-building flow until the draft is ready
+4. confirm the draft once the profile markdown artifact is ready
+
+The lower-level discovery tools:
+
+- `start_profile_discovery`
+- `get_profile_discovery_state`
+- `submit_profile_discovery_interpretation`
+
+remain available for workflow-layer integrations, but they are not the preferred
+host-visible entrypoint for normal profile-building conversations.
 
 ## If an active profile exists
 

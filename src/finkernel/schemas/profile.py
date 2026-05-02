@@ -172,6 +172,11 @@ class SavePersonaMarkdownRequest(BaseModel):
     version: int | None = Field(default=None, ge=1)
 
 
+class SaveProfileMarkdownRequest(BaseModel):
+    profile_markdown: str = Field(min_length=1)
+    version: int | None = Field(default=None, ge=1)
+
+
 class PersonaSourcePacket(BaseModel):
     profile_id: str
     version: int

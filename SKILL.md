@@ -1,6 +1,6 @@
 ---
 name: finkernel-profile
-description: "Build, review, and maintain a user's FinKernel profile through MCP-backed persona workflows."
+description: "Build, review, and maintain a user's FinKernel profile through MCP-backed profile workflows."
 version: "2.0.0"
 user-invocable: true
 ---
@@ -39,32 +39,46 @@ FinKernel stores:
 
 - onboarding state
 - structured profile boundaries
-- persona evidence
-- persona markdown
+- profile evidence
+- profile markdown
 - version history
 - long-term memory
 - short-term memory
+
+The discovery experience should feel like one continuous chat. Internal profile
+updates, conflict checks, and progress tracking should happen in the background
+unless the user explicitly asks to inspect the current profile state.
+
+## Critical Rules
+
+1. The first tool call for profile-building or profile-maintenance requests must be `assess_profile` when available, or legacy `assess_persona`.
+2. FinKernel currently exposes a tool-only surface, not an MCP resource surface.
+3. The MCP registration alias used by bootstrap is `finkernel`.
+4. Do not start profile construction by listing MCP resources, reading local files, inspecting `.env`, probing the database, or running shell discovery.
+5. If `assess_persona` is unavailable in the current session, stop and report that FinKernel MCP tools are not mounted in this session.
+6. Do not simulate the profile workflow by scanning repo files or local persisted data when MCP tools are unavailable.
 
 ## Tool Usage Rules
 
 ### Primary orchestration
 
-- MCP `assess_persona`
+- MCP `assess_profile`
+- MCP `assess_persona` legacy alias
 
-`assess_persona` is the default single entrypoint for profile-building
+`assess_profile` is the default single entrypoint for profile-building
 conversations. It decides whether FinKernel should:
 
 1. add a persona from scratch
-2. continue an incomplete persona
+2. continue an incomplete profile
 3. ask the user to choose a section to update
 4. move into draft confirmation
-5. keep the current active persona unchanged
+5. keep the current active profile unchanged
 
 ### Discovery and confirmation tools
 
 - MCP `start_profile_discovery`
-- MCP `get_next_profile_question`
-- MCP `submit_profile_discovery_answer`
+- MCP `get_profile_discovery_state`
+- MCP `submit_profile_discovery_interpretation`
 - MCP `generate_profile_draft`
 - MCP `confirm_profile_draft`
 
@@ -76,6 +90,8 @@ workflow layer. For normal profile conversations, prefer `assess_persona`.
 - MCP `get_profile_onboarding_status`
 - MCP `list_profiles`
 - MCP `get_profile`
+- MCP `get_profile_markdown`
+- MCP `get_profile_sources`
 - MCP `get_profile_persona_sources`
 - MCP `get_profile_persona_markdown`
 - MCP `get_risk_profile_summary`
@@ -85,36 +101,52 @@ workflow layer. For normal profile conversations, prefer `assess_persona`.
 
 ### Write or revise profile artifacts
 
+- MCP `save_profile_markdown`
 - MCP `save_profile_persona_markdown`
 - MCP `append_profile_memory`
 - MCP `review_profile`
 
 ### Prompt assets
 
-- `prompts/persona_assessment.md`
-- `prompts/persona_analyzer.md`
-- `prompts/persona_builder.md`
-- `prompts/persona_merger.md`
-- `prompts/persona_correction.md`
+- `prompts/profile_assessment.md`
+- `prompts/profile_analyzer.md`
+- `prompts/profile_builder.md`
+- `prompts/discovery_question_generator.md`
+- `prompts/discovery_answer_extractor.md`
+- `prompts/profile_narrative_builder.md`
+- `prompts/profile_merger.md`
+- `prompts/profile_correction.md`
 
 ## Main Flow
 
-### Step 1: Start with `assess_persona`
+### Step 1: Start with `assess_profile`
 
 For profile-building or profile-maintenance requests:
 
-1. call `assess_persona`
-2. inspect the returned `status`, `reason`, `notes`, and `next_question`
+1. call `assess_profile` if available, otherwise call legacy `assess_persona`
+2. inspect the returned `status`, `reason`, `notes`, and `discovery_state`
 3. continue only through the returned FinKernel state machine
 
-### Step 2: Handle question-driven construction
+### Step 2: Run the discovery loop section by section
 
 If `assess_persona` returns `question_pending`:
 
-1. ask the returned question
-2. submit the answer with `submit_profile_discovery_answer`
-3. call `assess_persona` again
-4. repeat until the returned status changes
+1. read `discovery_state.current_section`
+2. if `discovery_state.starter_question` is present, ask that starter question
+3. otherwise use `prompts/discovery_question_generator.md` to generate one dynamic follow-up question for the current section
+4. collect the user's answer
+5. use `prompts/discovery_answer_extractor.md` to produce a strict interpretation packet
+6. submit the packet with `submit_profile_discovery_interpretation`
+7. read the updated discovery state internally
+8. stay in the same section until it is covered
+9. move to the next section only after the current section is sufficiently covered
+10. call `assess_profile` again when you need the higher-level state machine to advance
+
+Do not:
+
+- dump the current working profile after every turn
+- report raw remaining gaps or conflict notes to the user as backend state
+- interrupt the interview with draft fragments before the user asks for them or the flow is complete
 
 ### Step 3: Handle update selection
 
@@ -122,15 +154,15 @@ If `assess_persona` returns `awaiting_update_selection`:
 
 1. present the returned `update_options`
 2. collect the user's section choice or `no_changes`
-3. send the selected `update_choice` back through `assess_persona`
+3. send the selected `update_choice` back through `assess_profile`
 
 ### Step 4: Draft authoring and confirmation
 
 If `assess_persona` returns `draft_ready`:
 
 1. read the draft and `persona_evidence`
-2. use `prompts/persona_analyzer.md` to structure the evidence
-3. use `prompts/persona_builder.md` to write or refresh `persona_markdown`
+2. use `prompts/profile_analyzer.md` to structure the evidence
+3. use `prompts/profile_builder.md` to write or refresh the final profile markdown artifact
 4. confirm the draft with `confirm_profile_draft`
 
 ### Step 5: Completed state
@@ -172,15 +204,15 @@ When the user says the current profile is wrong, incomplete, or outdated:
 
 1. read current profile context
 2. determine whether this is a local correction or a true reassessment
-3. if it changes structured boundaries or major traits, go back through `assess_persona`
-4. if it is only a markdown correction, use `prompts/persona_correction.md` and `save_profile_persona_markdown`
+3. if it changes structured boundaries or major traits, go back through `assess_profile`
+4. if it is only a markdown correction, use `prompts/profile_correction.md` and `save_profile_markdown`
 
-### Merge updates into an existing persona
+### Merge updates into an existing profile
 
 When prior conclusions and new evidence both matter:
 
 1. read current markdown, evidence, and memory
-2. use `prompts/persona_merger.md`
+2. use `prompts/profile_merger.md`
 3. preserve still-valid conclusions
 4. explicitly reconcile contradictory evidence instead of silently overwriting it
 
@@ -206,3 +238,6 @@ Do not:
 3. Preserve time-sensitive constraints in prose and memory.
 4. Keep structured boundaries and narrative traits separate.
 5. Use merge or correction prompts whenever new evidence changes prior conclusions.
+6. Use `discovery_question_generator` for follow-up wording and `discovery_answer_extractor` for semantic interpretation.
+7. Do not give generic ETF / T-bill / market advice first when profile-aware FinKernel routing is available.
+8. Use internal conflicts, uncertainty, and remaining gaps to shape the next clarifying question rather than surfacing those mechanics to the user on every turn.

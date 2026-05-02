@@ -55,7 +55,7 @@ The product vision spans several major framework layers. Only the financial prof
 
 | Framework | What it is for | Typical outcomes | Status |
 | --- | --- | --- | --- |
-| Financial Profile Engine | Build a durable investor persona with risk preferences, constraints, memories, and human-readable markdown | `assess_persona`, risk summary, versioned persona updates | ![Live](https://img.shields.io/badge/Status-Live_Today-16A34A?style=flat-square) |
+| Financial Profile Engine | Build a durable investor profile with risk preferences, constraints, memories, and human-readable markdown | `assess_persona`, risk summary, versioned profile updates | ![Live](https://img.shields.io/badge/Status-Live_Today-16A34A?style=flat-square) |
 | News Engine | Collect and normalize news from multiple financial sources for AI retrieval | market-moving event collection, source-aware summaries, watchlists | ![Planned](https://img.shields.io/badge/Status-Planned-F59E0B?style=flat-square) |
 | Research Engine | Analyze earnings, filings, news impact, and price behavior | report digestion, event impact analysis, narrative plus signal synthesis | ![Planned](https://img.shields.io/badge/Status-Planned-F59E0B?style=flat-square) |
 | Trading Engine | Route and manage trading orders through integrated brokers and execution layers | order routing, approval flows, execution support | ![Planned](https://img.shields.io/badge/Status-Planned-F59E0B?style=flat-square) |
@@ -69,7 +69,7 @@ In the current codebase, FinKernel focuses on:
 - profile onboarding
 - guided risk-profile discovery
 - profile review and versioning
-- persona markdown authoring
+- profile markdown authoring
 - long-term and short-term memory capture
 - MCP + HTTP access for host agents
 
@@ -162,7 +162,7 @@ For deeper setup details, see:
 | Asset | Purpose |
 | --- | --- |
 | `SKILL.md` | Primary host-visible profile skill for building and maintaining the FinKernel profile |
-| `prompts/persona_assessment.md` | Prompt template keyed off `assess_persona` status values |
+| `prompts/profile_assessment.md` | Prompt template keyed off `assess_persona` status values |
 | `prompts/finkernel_system_routing.md` | System routing policy so the host reads profile context before generic finance advice |
 
 ### First-class host agents
@@ -179,13 +179,13 @@ For deeper setup details, see:
 
 | Tool | What it does |
 | --- | --- |
-| `assess_persona` | Single-entry orchestration for add/update persona flows |
+| `assess_persona` | Single-entry orchestration for add/update profile flows |
 | `get_profile_onboarding_status` | Checks whether a usable active profile exists |
-| `get_profile` | Reads the active structured persona profile |
-| `get_profile_persona_markdown` | Reads the human-readable persona artifact |
-| `get_profile_persona_sources` | Reads evidence, memories, and contextual rules behind the persona |
+| `get_profile` | Reads the active structured profile |
+| `get_profile_persona_markdown` | Reads the human-readable profile markdown artifact |
+| `get_profile_persona_sources` | Reads evidence, memories, and contextual rules behind the profile |
 | `get_risk_profile_summary` | Returns the compact profile summary for downstream guidance |
-| `save_profile_persona_markdown` | Saves or refreshes persona markdown |
+| `save_profile_persona_markdown` | Saves or refreshes the profile markdown artifact |
 | `review_profile` | Starts a profile review/update flow from new evidence |
 | `append_profile_memory` | Adds new long-term or short-term memory |
 | `search_profile_memory` | Retrieves profile memory relevant to the current conversation |
@@ -196,17 +196,17 @@ For deeper setup details, see:
 | Tool | Role |
 | --- | --- |
 | `start_profile_discovery` | Starts raw discovery when not using the single-entry orchestration path |
-| `get_next_profile_question` | Retrieves the next discovery question |
-| `submit_profile_discovery_answer` | Submits an answer to the active discovery session |
+| `get_profile_discovery_state` | Reads the current section, starter question, visible coverage, and working profile snapshot |
+| `submit_profile_discovery_interpretation` | Submits the agent-analyzed interpretation packet for the latest discovery turn |
 | `generate_profile_draft` | Builds a confirmable draft from a completed session |
-| `confirm_profile_draft` | Finalizes the profile version once persona markdown is ready |
+| `confirm_profile_draft` | Finalizes the profile version once profile markdown is ready |
 | `list_profiles` | Lists stored profiles |
 | `list_profile_versions` | Shows version history for one profile |
 
 ### Recommended host flow
 
 1. Call `get_profile_onboarding_status` for profile-aware investment requests.
-2. Use `assess_persona` for persona creation, continuation, or targeted updates.
+2. Use `assess_persona` for profile creation, continuation, or targeted updates.
 3. Read `get_profile`, `get_profile_persona_markdown`, and `get_risk_profile_summary` before advice.
 4. Use memory and review tools when new information changes the user's context.
 
@@ -216,15 +216,17 @@ For deeper setup details, see:
 - `docs/readme_lang/README.en.md`
 - `docs/readme_lang/README.zh-CN.md`
 - `docs/setup-and-run.md`
-- `docs/persona-profiles.md`
+- `docs/profile-data-model.md`
 - `docs/profile-schema-design.md`
-- `docs/persona-agent-workflow.md`
+- `docs/profile-discovery-architecture.md`
+- `docs/profile-agent-workflow.md`
 - `docs/investment-conversation-routing.md`
 - `docs/future-module-development-rules.md`
 - `docs/upper-layer-agent-integration.md`
 - `docs/host-agent-runtime-integration.md`
 - `docs/troubleshooting.md`
 - `prompts/finkernel_system_routing.md`
+- `prompts/profile_assessment.md`
 - `SKILL.md`
 
 ## Star History
