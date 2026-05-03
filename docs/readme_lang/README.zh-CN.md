@@ -55,7 +55,7 @@ flowchart LR
 
 | 框架 | 作用 | 典型输出 | 状态 |
 | --- | --- | --- | --- |
-| Financial Profile Engine | 建立持续演化的投资 profile，包含风险偏好、约束、记忆与可读 markdown | `assess_persona`、risk summary、版本化 profile 更新 | ![Live](https://img.shields.io/badge/Status-Live_Today-16A34A?style=flat-square) |
+| Financial Profile Engine | 建立持续演化的投资 profile，包含风险偏好、约束、记忆与可读 markdown | `assess_profile`、risk summary、版本化 profile 更新 | ![Live](https://img.shields.io/badge/Status-Live_Today-16A34A?style=flat-square) |
 | News Engine | 从多类金融来源采集并标准化新闻，供 AI 检索使用 | 市场事件聚合、来源感知摘要、观察列表 | ![Planned](https://img.shields.io/badge/Status-Planned-F59E0B?style=flat-square) |
 | Research Engine | 分析财报、新闻影响与价格行为 | 报告解读、事件影响分析、叙事与信号综合 | ![Planned](https://img.shields.io/badge/Status-Planned-F59E0B?style=flat-square) |
 | Trading Engine | 对接券商与执行层，处理交易订单路由 | 订单路由、审批流、执行辅助 | ![Planned](https://img.shields.io/badge/Status-Planned-F59E0B?style=flat-square) |
@@ -88,7 +88,7 @@ FinKernel v1 当前只支持一种官方本地安装方式：
 ```powershell
 git clone https://github.com/JiwenS/FinKernel.git
 cd FinKernel
-powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-local.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1
 ```
 
 这个 bootstrap 流程的目标不是“只是跑一个脚本”，而是像一个引导式安装器。它会：
@@ -138,7 +138,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-local.ps1
 ```mermaid
 flowchart LR
     A[git clone] --> B[cd FinKernel]
-    B --> C[bootstrap-local.ps1]
+    B --> C[bootstrap.ps1]
     C --> D[引导式 .env 配置]
     D --> E[Docker Compose Up]
     E --> F[Health Check 与 HTTP MCP 就绪]
@@ -158,7 +158,7 @@ flowchart LR
 | 资产 | 作用 |
 | --- | --- |
 | `../../SKILL.md` | Host agent 的顶层 skill，用来把 profile-aware 对话路由到 FinKernel |
-| `../../prompts/profile_assessment.md` | 基于 `assess_persona` 状态返回的 prompt 模板 |
+| `../../prompts/profile_assessment.md` | 基于 `assess_profile` 状态返回的 prompt 模板 |
 | `../../prompts/finkernel_system_routing.md` | 系统级 routing policy，确保 agent 在给泛化建议前先读取 profile context |
 
 ### 一等公民 agent
@@ -175,13 +175,13 @@ flowchart LR
 
 | 工具 | 作用 |
 | --- | --- |
-| `assess_persona` | profile add/update 的单入口编排工具 |
+| `assess_profile` | profile add/update 的单入口编排工具 |
 | `get_profile_onboarding_status` | 检查当前是否存在可用的 active profile |
 | `get_profile` | 读取结构化 persona profile |
-| `get_profile_persona_markdown` | 读取可读版 profile markdown artifact |
+| `get_profile_markdown` | 读取可读版 profile markdown artifact |
 | `get_profile_persona_sources` | 读取 profile 背后的 evidence、memory 与 rules |
 | `get_risk_profile_summary` | 返回压缩版风险画像摘要，供下游建议使用 |
-| `save_profile_persona_markdown` | 保存或刷新 profile markdown |
+| `save_profile_markdown` | 保存或刷新 profile markdown |
 | `review_profile` | 基于新证据启动 profile review/update |
 | `append_profile_memory` | 追加 long-term 或 short-term memory |
 | `search_profile_memory` | 检索与当前对话相关的 profile memory |
@@ -202,8 +202,8 @@ flowchart LR
 ### 推荐 host 流程
 
 1. 对于 profile-aware 的投资请求，先调用 `get_profile_onboarding_status`。
-2. 对 profile 的创建、续做或定向更新，统一使用 `assess_persona`。
-3. 在给建议前，先读取 `get_profile`、`get_profile_persona_markdown` 和 `get_risk_profile_summary`。
+2. 对 profile 的创建、续做或定向更新，统一使用 `assess_profile`。
+3. 在给建议前，先读取 `get_profile`、`get_profile_markdown` 和 `get_risk_profile_summary`。
 4. 当用户的新信息改变上下文时，再使用 review 与 memory 工具。
 
 ## 建议先读

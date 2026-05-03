@@ -17,15 +17,19 @@ For the current delivery plan, this runtime integration is specifically about Ph
 
 If the user cloned the repo and wants a working local install with host-agent registration in one pass, start here:
 
-1. run `powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-local.ps1`
-2. let the installer start the Docker stack and wait for `http://localhost:<APP_PORT>/api/health`
-3. let the installer fast-path one of the four first-class agents: `Codex`, `Claude Code`, `OpenClaw`, or `Hermes`
-4. let the installer auto-register HTTP MCP when that agent's CLI is available, or fall back to the generated bundle + local HTTP MCP config for a custom host
+1. run `powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1`
+2. choose Lite mode for local file storage and MCP stdio, or Server mode for Docker/PostgreSQL and HTTP MCP
+3. in Server mode, let the installer fast-path one of the four first-class agents: `Codex`, `Claude Code`, `OpenClaw`, or `Hermes`
+4. in Lite mode, use the generated `config/host-agent-mcp-stdio.local.json`
 5. inject `prompts/finkernel_system_routing.md`
 6. use `prompts/profile_assessment.md` for the assessment conversation layer
 7. use `SKILL.md` as the host-side skill entrypoint
 
-The bootstrap script prepares `.env`, ensures the local blank profile store file exists, runs Docker Compose, waits for the app to become healthy, emits a local HTTP MCP config, writes a FinKernel skill bundle into the selected agent directory, and attempts agent-specific HTTP MCP registration for Codex, Claude Code, OpenClaw, or Hermes.
+The unified bootstrap prepares `.env`, ensures the local blank profile store file exists, and chooses the requested runtime. Lite mode emits a local stdio MCP config and verifies the file-backed runtime without Docker. Server mode runs Docker Compose, waits for the app to become healthy, emits a local HTTP MCP config, writes a FinKernel skill bundle into the selected agent directory, and attempts agent-specific HTTP MCP registration for Codex, Claude Code, OpenClaw, or Hermes.
+
+Compatibility wrappers remain available as `scripts/bootstrap-lite.ps1` and
+`scripts/bootstrap-local.ps1`, but new user-facing docs should point to
+`scripts/bootstrap.ps1`.
 
 ## Important runtime facts
 
@@ -77,7 +81,7 @@ as a legacy compatibility alias.
 
 That tool lets the host treat FinKernel as a single orchestration surface: it decides whether FinKernel should add a profile from scratch, continue an update, ask the user to choose a section to refresh, or move into draft confirmation.
 
-If `assess_persona` is not available in the current session, the host should
+If neither `assess_profile` nor legacy `assess_persona` is available in the current session, the host should
 stop and report that FinKernel MCP tools are not mounted, rather than falling
 back to repo inspection or local persistence probing.
 

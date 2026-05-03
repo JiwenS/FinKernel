@@ -74,6 +74,9 @@ function Prompt-Value {
 
 function Get-DotEnvDefaults {
     return @{
+        STORAGE_BACKEND = "database"
+        PROFILE_DATA_DIR = ".finkernel"
+        PROFILE_STORE_PATH = "config/persona-profiles.json"
         APP_PORT = "8000"
         POSTGRES_DB = "finkernel"
         POSTGRES_USER = "finkernel"
@@ -117,7 +120,11 @@ function Write-DotEnv {
     )
 
     $lines = @(
-        "# Docker-first local settings for FinKernel Phase 1",
+        "# Server-mode local settings for FinKernel",
+        "STORAGE_BACKEND=database",
+        "PROFILE_DATA_DIR=$($Values.PROFILE_DATA_DIR)",
+        "PROFILE_STORE_PATH=$($Values.PROFILE_STORE_PATH)",
+        "",
         "# Host port exposed by the FinKernel HTTP app.",
         "APP_PORT=$($Values.APP_PORT)",
         "",
@@ -135,7 +142,7 @@ function Prompt-DotEnvValues {
     )
 
     Write-Host ""
-    Write-Host "FinKernel local setup is Docker-only for Phase 1. The installer will configure Docker Compose, start PostgreSQL with pgvector, and then register host-agent MCP access." -ForegroundColor Cyan
+    Write-Host "FinKernel Server setup will configure Docker Compose, start PostgreSQL with pgvector, and then register host-agent MCP access." -ForegroundColor Cyan
 
     return @{
         APP_PORT = (Prompt-Value -Message "Host port for FinKernel HTTP and MCP" -Default $CurrentValues.APP_PORT)
@@ -147,14 +154,14 @@ function Prompt-DotEnvValues {
 
 function Get-DockerComposeMode {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-        throw "Docker CLI was not found. Install Docker Desktop (or Docker Engine with docker compose) and rerun scripts\\bootstrap-local.ps1."
+        throw "Docker CLI was not found. Install Docker Desktop (or Docker Engine with docker compose) and rerun scripts\\bootstrap.ps1 -Mode Server."
     }
 
     try {
         & docker version *> $null
     }
     catch {
-        throw "Docker is installed but not reachable. Start Docker and rerun scripts\\bootstrap-local.ps1."
+        throw "Docker is installed but not reachable. Start Docker and rerun scripts\\bootstrap.ps1 -Mode Server."
     }
 
     try {
@@ -165,7 +172,7 @@ function Get-DockerComposeMode {
         if (Get-Command docker-compose -ErrorAction SilentlyContinue) {
             return "legacy"
         }
-        throw "Docker compose was not found. Install a Docker version that includes docker compose and rerun scripts\\bootstrap-local.ps1."
+        throw "Docker compose was not found. Install a Docker version that includes docker compose and rerun scripts\\bootstrap.ps1 -Mode Server."
     }
 }
 

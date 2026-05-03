@@ -235,6 +235,10 @@ Map the structured profile into the template like this:
 8. When something is durable, place it in the relevant main section and reinforce it in observations if needed.
 9. Do not over-quote. Use short excerpts only where they increase authenticity.
 10. Keep the document readable by both the human user and future agents.
+11. Do not turn a conditional risk rule into an unconditional hard boundary.
+    If the user says high drawdown is acceptable only when the thesis remains
+    intact, write that as a contextual rule and mark the hard portfolio-level
+    drawdown boundary as unconfirmed unless it was separately confirmed.
 
 ## Review And Update Rules
 

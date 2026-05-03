@@ -156,6 +156,11 @@ Narrative dimensions must use `narrative_dimension_updates`, not
 
 ## Coverage rules
 
+Conditional risk statements should not be compressed into unconditional hard
+limits. If a user says they can accept deep losses only when an investment
+thesis remains intact, store that as a contextual rule and keep the hard
+portfolio-level boundary outstanding unless it has been separately confirmed.
+
 - Use `covered_dimensions` only when the answer is sufficient for downstream
   profile use.
 - A dimension can be covered even when the value is intentionally unknown or not

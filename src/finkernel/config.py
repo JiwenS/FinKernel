@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     app_name: str = "FinKernel"
     environment: Literal["development", "test", "production"] = "development"
     api_prefix: str = "/api"
+    storage_backend: Literal["file", "database"] = "file"
+    profile_data_dir: str = ".finkernel"
     database_url: str = "postgresql+psycopg://finkernel:change-me@localhost:5432/finkernel"
     enable_pgvector: bool = True
     profile_store_path: str = "config/persona-profiles.json"

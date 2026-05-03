@@ -2,20 +2,73 @@
 
 ## Official local path
 
-FinKernel v1 supports one official local installation path:
+FinKernel v1 supports two local installation paths:
 
-- Docker-only
+- Lite file storage, recommended for individual local profile generation
+- Docker/PostgreSQL Server mode, optional for advanced local service testing
 
 The host machine should have:
 
-- Docker
 - one of the supported host-agent CLIs if you want automatic registration: `codex`, `claude`, `openclaw`, or `hermes`
 
-## Fastest local setup
+Docker is only required for Server mode.
+
+## Lite local setup
+
+Lite mode is the default application configuration:
+
+- `STORAGE_BACKEND=file`
+- `PROFILE_DATA_DIR=.finkernel`
+
+In Lite mode FinKernel writes local profile artifacts under `.finkernel/` and
+does not initialize PostgreSQL.
+
+Current generated artifacts include:
+
+- `.finkernel/profiles/<profile_id>/versions/v001/profile.json`
+- `.finkernel/profiles/<profile_id>/versions/v001/profile.md`
+- `.finkernel/profiles/<profile_id>/versions/v001/profile_sources.json`
+- `.finkernel/profiles/<profile_id>/versions/v001/profile_context_pack.json`
+- `.finkernel/profiles/<profile_id>/versions/v001/profile_context_pack.md`
+- `.finkernel/discovery/sessions/<session_id>/state.json`
+- `.finkernel/discovery/sessions/<session_id>/turns.jsonl`
+- `.finkernel/discovery/sessions/<session_id>/interpretations.jsonl`
+
+For the storage contract, see `docs/local-file-storage-lite.md`.
+
+Run the Lite bootstrap from the repo root:
+
+- `powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1`
+
+That script will:
+
+- ask whether to install Lite mode or Server mode
+- create `.venv` if needed
+- install FinKernel into the local virtual environment
+- create `.env` with file storage defaults if it does not exist
+- ensure `config/persona-profiles.json` exists as a blank seed file
+- create `.finkernel/` for local profile artifacts
+- write `config/host-agent-mcp-stdio.local.json`
+- verify the MCP stdio runtime without starting Docker
+
+## Direct mode selection
+
+To skip the prompt, pass the mode explicitly:
+
+- `powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1 -Mode Lite`
+- `powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1 -Mode Server`
+
+`scripts/bootstrap-lite.ps1` and `scripts/bootstrap-local.ps1` remain available
+as compatibility wrappers, but `scripts/bootstrap.ps1` is the preferred user
+entrypoint.
+
+## Server local setup
+
+The Server-mode path is Docker-oriented:
 
 Run one command from the repo root:
 
-- `powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-local.ps1`
+- `powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1 -Mode Server`
 
 That bootstrap script will:
 
@@ -63,29 +116,33 @@ Helpful switches:
 
 ## Manual Docker path
 
-The supported manual alternative is still Docker-based:
+The supported manual Server-mode path is Docker-based:
 
 1. Copy `.env.example` to `.env`.
-2. Set at least `APP_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD`.
-3. Ensure `config/persona-profiles.json` exists, or copy the blank scaffold from `config/persona-profiles.example.json`.
-4. Run `docker compose up -d --build`.
-5. Wait for `GET /api/health` to return `200`.
+2. Set `STORAGE_BACKEND=database`.
+3. Set at least `APP_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD`.
+4. Ensure `config/persona-profiles.json` exists, or copy the blank scaffold from `config/persona-profiles.example.json`.
+5. Run `docker compose up -d --build`.
+6. Wait for `GET /api/health` to return `200`.
 
 ## Connect a host agent
 
-1. Run `scripts/bootstrap-local.ps1` and pick one of the four first-class agents:
+1. Run `scripts/bootstrap.ps1`.
+2. For Lite mode, use `config/host-agent-mcp-stdio.local.json`.
+3. For Server mode, pick one of the four first-class agents:
    - `Codex`: installs the FinKernel skill into `~/.codex/skills` and tries `codex mcp add`
    - `Claude Code`: installs the FinKernel skill into `~/.claude/skills` and tries `claude mcp add --transport http`
    - `OpenClaw`: installs the FinKernel skill into `~/.openclaw/skills` and tries `openclaw mcp set`
    - `Hermes`: installs the FinKernel skill into `~/.hermes/skills` and tries `hermes config set mcp_servers.finkernel.url`
-2. If you need a manual example instead, use `config/host-agent-mcp-http.local.json` or `config/host-agent-mcp-http.example.json`.
-3. Keep `prompts/finkernel_system_routing.md` available to the host runtime.
-4. Use `prompts/profile_assessment.md` as the host-side assessment prompt template.
-5. Use `SKILL.md` as the top-level profile-building skill.
-6. For a single-entry orchestration flow, start with `assess_persona`.
+4. If you need a manual HTTP example instead, use `config/host-agent-mcp-http.local.json` or `config/host-agent-mcp-http.example.json`.
+5. Keep `prompts/finkernel_system_routing.md` available to the host runtime.
+6. Use `prompts/profile_assessment.md` as the host-side assessment prompt template.
+7. Use `SKILL.md` as the top-level profile-building skill.
+8. For a single-entry orchestration flow, start with `assess_profile`, or legacy `assess_persona`.
 
 ## Useful local checks
 
+- `powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1 -Mode Lite -SkipInstall`
 - `docker compose ps`
 - `docker compose logs app --tail 200`
 - `pytest`

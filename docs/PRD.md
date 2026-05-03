@@ -23,7 +23,8 @@ This profile should answer:
 ## In scope
 
 - guided onboarding across core risk dimensions
-- single-entry `assess_persona` orchestration for add/update flows
+- single-entry `assess_profile` orchestration for add/update flows, with
+  `assess_persona` retained as a legacy alias
 - profile draft generation
 - explicit user confirmation into an active version
 - versioned profile review

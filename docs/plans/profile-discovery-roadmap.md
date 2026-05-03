@@ -13,6 +13,8 @@ interpretation and dynamic follow-up wording.
 
 The current implementation already includes:
 
+- a default Lite file-storage backend for local profile generation without
+  Docker or PostgreSQL
 - four Phase 1 discovery sections:
   - `financial_objectives`
   - `risk`
@@ -28,6 +30,13 @@ The current implementation already includes:
   failures
 
 ## Remaining gaps
+
+### 0. Lite setup needs a one-command host-agent installer
+
+The runtime can now persist profiles and discovery state to local files, but the
+non-technical onboarding path still needs a dedicated Lite bootstrap script that
+creates the local data directory, verifies Python dependencies, and writes
+host-agent MCP configuration.
 
 ### 1. Agent orchestration is not yet a product-grade loop
 
@@ -78,6 +87,14 @@ Those names can remain for compatibility, but new product surfaces should use
 profile-first terminology.
 
 ## Implementation plan
+
+### P-Lite: Make file storage the individual-user default
+
+- Store profile versions, markdown, sources, context packs, discovery state,
+  turns, interpretation packets, and drafts under `.finkernel/`.
+- Keep Docker/PostgreSQL as Server mode for advanced deployments.
+- Add a Lite storage contract document.
+- Follow up with a no-Docker bootstrap script and host-agent config generator.
 
 ### P0: Stabilize the discovery contract
 
@@ -172,3 +189,23 @@ P4 has now started:
 
 The next execution focus is hardening compatibility tests around legacy and
 profile-first aliases.
+
+### 2026-05-03
+
+P-Lite has started:
+
+- added `STORAGE_BACKEND=file` and `PROFILE_DATA_DIR=.finkernel`
+- added a file-backed profile store for local profile versions and export
+  artifacts
+- added file-backed discovery session, turn, interpretation, and draft
+  persistence
+- added `scripts/bootstrap-lite.ps1`
+- added `scripts/bootstrap.ps1` as the unified installer entrypoint for Lite
+  and Server mode
+- added an MCP stdio runner for no-Docker host-agent registration
+- added `docs/local-file-storage-lite.md`
+- updated setup docs to describe Lite as the recommended individual-user path
+  and Docker/PostgreSQL as Server mode
+
+The next Lite focus is host-specific auto-registration for Codex, Claude Code,
+OpenClaw, and Hermes from the unified bootstrap flow.

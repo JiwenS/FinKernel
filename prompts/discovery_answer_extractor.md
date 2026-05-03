@@ -105,22 +105,32 @@ Return exact value shapes:
 
 1. Only place values in `structured_field_updates` when the answer is specific
    enough to normalize confidently.
+   - For conditional risk statements, do not force the user's words into a
+     single hard numeric boundary. For example, "I can tolerate deep drawdowns
+     if the thesis is intact, but exit quickly if the thesis is wrong" should
+     become a `contextual_rule_candidate` and usually a remaining gap for the
+     hard portfolio-level boundary.
+   - Only update `max_drawdown_limit` or `max_annual_volatility` when the user
+     gives an unconditional portfolio-level boundary or explicitly confirms
+     that a conditional number should be used as the hard boundary.
 2. Use `covered_dimensions` for dimensions that are sufficiently covered even if
    the value is intentionally unknown or not applicable.
 3. Put enduring psychological or communication signals into
    `narrative_dimension_updates` and long-term memory.
 4. Put temporary context into short-term memory.
 5. Put exact source excerpts into `evidence_snippets`.
-6. Use `remaining_gaps` only for issues that still matter for profile quality.
-7. Prefer `dimension_remaining_gaps` when an unresolved gap belongs to a
+6. Put thesis-driven or condition-dependent risk behavior into
+   `contextual_rule_candidates`, not only into numeric structured fields.
+7. Use `remaining_gaps` only for issues that still matter for profile quality.
+8. Prefer `dimension_remaining_gaps` when an unresolved gap belongs to a
    specific dimension.
-8. Use `conflict_notes` only when the answer materially conflicts with accepted
+9. Use `conflict_notes` only when the answer materially conflicts with accepted
    profile state.
-9. Prefer `dimension_conflict_notes` when the conflict belongs to a specific
+10. Prefer `dimension_conflict_notes` when the conflict belongs to a specific
    dimension.
-10. Set `section_complete` to `true` only when the section is sufficiently
+11. Set `section_complete` to `true` only when the section is sufficiently
    covered for downstream profile use.
-11. Return strict JSON only.
-12. Treat gaps, conflicts, and `confidence_label` as hidden
+12. Return strict JSON only.
+13. Treat gaps, conflicts, and `confidence_label` as hidden
     orchestration inputs for the next turn, not as content that needs to be
     narrated back to the user.

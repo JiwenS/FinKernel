@@ -49,13 +49,41 @@ The discovery experience should feel like one continuous chat. Internal profile
 updates, conflict checks, and progress tracking should happen in the background
 unless the user explicitly asks to inspect the current profile state.
 
+## User-Visible Wording Protocol
+
+Do not expose internal runtime labels or tool mechanics to the user.
+
+Do not say:
+
+- `draft_ready`
+- `pending draft`
+- `Used Finkernel`
+- `tool call`
+- raw backend conflict notes
+- raw remaining gap lists
+
+Use stable product phrasing instead:
+
+- when discovery is sufficiently covered:
+  - "信息已经足够，我会整理一版画像草稿给你确认。"
+- when the draft has been written:
+  - "下面是画像草稿。请你确认是否保存为正式 profile，或者指出需要修改的地方。"
+- before saving the active profile:
+  - "如果你确认这版草稿，我再把它保存为正式 profile。"
+- after explicit user confirmation and successful save:
+  - "已保存为正式 profile，后续我会默认按这版画像工作。"
+
+Never confirm a draft as the active profile unless the user has explicitly
+approved the shown draft. `confirm_profile_draft` must include
+`user_confirmed=true` only after that explicit approval.
+
 ## Critical Rules
 
 1. The first tool call for profile-building or profile-maintenance requests must be `assess_profile` when available, or legacy `assess_persona`.
 2. FinKernel currently exposes a tool-only surface, not an MCP resource surface.
 3. The MCP registration alias used by bootstrap is `finkernel`.
 4. Do not start profile construction by listing MCP resources, reading local files, inspecting `.env`, probing the database, or running shell discovery.
-5. If `assess_persona` is unavailable in the current session, stop and report that FinKernel MCP tools are not mounted in this session.
+5. If neither `assess_profile` nor legacy `assess_persona` is available in the current session, stop and report that FinKernel MCP tools are not mounted in this session.
 6. Do not simulate the profile workflow by scanning repo files or local persisted data when MCP tools are unavailable.
 
 ## Tool Usage Rules
@@ -83,7 +111,7 @@ conversations. It decides whether FinKernel should:
 - MCP `confirm_profile_draft`
 
 Use these only when the host is intentionally operating at the lower-level
-workflow layer. For normal profile conversations, prefer `assess_persona`.
+workflow layer. For normal profile conversations, prefer `assess_profile`.
 
 ### Read profile context
 
@@ -129,7 +157,7 @@ For profile-building or profile-maintenance requests:
 
 ### Step 2: Run the discovery loop section by section
 
-If `assess_persona` returns `question_pending`:
+If `assess_profile` or legacy `assess_persona` returns `question_pending`:
 
 1. read `discovery_state.current_section`
 2. if `discovery_state.starter_question` is present, ask that starter question
@@ -150,7 +178,7 @@ Do not:
 
 ### Step 3: Handle update selection
 
-If `assess_persona` returns `awaiting_update_selection`:
+If `assess_profile` or legacy `assess_persona` returns `awaiting_update_selection`:
 
 1. present the returned `update_options`
 2. collect the user's section choice or `no_changes`
@@ -158,16 +186,19 @@ If `assess_persona` returns `awaiting_update_selection`:
 
 ### Step 4: Draft authoring and confirmation
 
-If `assess_persona` returns `draft_ready`:
+If `assess_profile` or legacy `assess_persona` returns `draft_ready`:
 
-1. read the draft and `persona_evidence`
-2. use `prompts/profile_analyzer.md` to structure the evidence
-3. use `prompts/profile_builder.md` to write or refresh the final profile markdown artifact
-4. confirm the draft with `confirm_profile_draft`
+1. say: "信息已经足够，我会整理一版画像草稿给你确认。"
+2. read the draft and `draft_source`
+3. use `prompts/profile_analyzer.md` to structure the evidence
+4. use `prompts/profile_builder.md` to write or refresh the final profile markdown artifact
+5. show the profile markdown draft to the user
+6. ask the user to confirm or request changes
+7. call `confirm_profile_draft` with `user_confirmed=true` only after explicit user approval
 
 ### Step 5: Completed state
 
-If `assess_persona` returns `persona_complete`:
+If `assess_profile` or legacy `assess_persona` returns `persona_complete`:
 
 - continue using the current active profile
 - do not restart discovery unless the user asks for a revision

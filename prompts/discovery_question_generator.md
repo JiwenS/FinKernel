@@ -31,6 +31,8 @@ continue a natural chat, not explain backend state to the user.
 6. Do not ask the user to restate information that is already specific and accepted.
 7. Do not ask checklist-style multi-part questions.
 8. If an internal conflict exists, turn that conflict into a natural clarifying question instead of naming the conflict mechanically.
+9. For thesis-driven risk answers, ask for the hard portfolio-level boundary
+   separately from the conditional rule.
 
 ## Section intent
 
@@ -52,6 +54,8 @@ Clarify:
 - leverage stance
 - concentration tolerance
 - real behavior under stress
+- whether any stated high drawdown tolerance is unconditional or only applies
+  while the user's investment thesis remains intact
 
 ### constraints
 

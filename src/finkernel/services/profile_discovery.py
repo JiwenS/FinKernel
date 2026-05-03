@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 import re
 from typing import Any, Iterator
 from uuid import uuid4
@@ -68,6 +69,7 @@ from finkernel.schemas.profile import (
     RiskProfileSummary,
 )
 from finkernel.services.profiles import ProfileStore
+from finkernel.storage.files import append_json_line, read_json, read_json_lines, write_json_atomic
 from finkernel.storage.models import (
     DiscoveryConversationTurnModel,
     DiscoveryInterpretationModel,
@@ -182,12 +184,16 @@ class InvalidDiscoveryInterpretationError(ValueError):
     pass
 
 
+class DraftConfirmationRequiredError(ValueError):
+    pass
+
+
 class ProfileDiscoveryService:
     def __init__(
         self,
         *,
         settings: Settings,
-        session_factory: sessionmaker[Session],
+        session_factory: sessionmaker[Session] | None,
         profile_store: ProfileStore,
         session_repository: DiscoverySessionRepository | None = None,
         turn_repository: DiscoveryConversationTurnRepository | None = None,
@@ -201,6 +207,10 @@ class ProfileDiscoveryService:
         self.turn_repository = turn_repository or DiscoveryConversationTurnRepository()
         self.interpretation_repository = interpretation_repository or DiscoveryInterpretationRepository()
         self.draft_repository = draft_repository or ProfileDraftRepository()
+
+    @property
+    def _uses_file_storage(self) -> bool:
+        return self.settings.storage_backend == "file"
 
     def start_discovery(self, *, owner_id: str, preferred_profile_name: str | None = None) -> DiscoverySession:
         session = DiscoverySession(
@@ -250,6 +260,8 @@ class ProfileDiscoveryService:
         return session
 
     def get_session(self, session_id: str) -> DiscoverySession:
+        if self._uses_file_storage:
+            return self._get_file_session(session_id)
         with self._session_scope() as session:
             model = self.session_repository.get(session, session_id)
             if model is None:
@@ -414,6 +426,12 @@ class ProfileDiscoveryService:
         return draft
 
     def get_draft(self, draft_id: str) -> ProfileDraft:
+        if self._uses_file_storage:
+            path = self._file_drafts_root() / draft_id / "draft.json"
+            payload = read_json(path, default=None)
+            if payload is None:
+                raise KeyError(f"Unknown profile_draft_id: {draft_id}")
+            return ProfileDraft.model_validate(payload)
         with self._session_scope() as session:
             model = self.draft_repository.get(session, draft_id)
             if model is None:
@@ -669,6 +687,10 @@ class ProfileDiscoveryService:
         )
 
     def confirm_draft(self, *, draft_id: str, payload: ConfirmProfileDraftRequest) -> PersonaProfile:
+        if not payload.user_confirmed:
+            raise DraftConfirmationRequiredError(
+                "The user must explicitly confirm the draft before it can be saved as the active profile."
+            )
         draft = self.get_draft(draft_id)
         suggested = draft.suggested_profile.model_copy(deep=True)
         profile_id = payload.profile_id or suggested.profile_id
@@ -765,6 +787,20 @@ class ProfileDiscoveryService:
         workflow_kind: DiscoveryWorkflowKind,
         source_profile_id: str | None,
     ) -> list[DiscoverySession]:
+        if self._uses_file_storage:
+            candidates = [
+                session
+                for session in self._list_file_sessions(owner_id=owner_id)
+                if session.status in {
+                    DiscoverySessionStatus.DISCOVERY_IN_PROGRESS,
+                    DiscoverySessionStatus.DRAFT_READY,
+                }
+            ]
+            return [
+                candidate
+                for candidate in candidates
+                if candidate.workflow_kind == workflow_kind and candidate.source_profile_id == source_profile_id
+            ]
         with self._session_scope() as session:
             models = self.session_repository.list_for_owner(
                 session,
@@ -813,6 +849,18 @@ class ProfileDiscoveryService:
             self._mark_session_completed(session.session_id)
 
     def _get_or_create_draft_for_session(self, session_id: str) -> ProfileDraft:
+        if self._uses_file_storage:
+            drafts = [
+                ProfileDraft.model_validate(read_json(path, default={}))
+                for path in sorted(
+                    (self._file_session_dir(session_id) / "drafts").glob("*/draft.json"),
+                    key=lambda item: item.stat().st_mtime,
+                    reverse=True,
+                )
+            ]
+            if drafts:
+                return drafts[0]
+            return self.generate_draft(session_id)
         with self._session_scope() as session:
             models = self.draft_repository.list_for_session(session, session_id)
         if models:
@@ -1578,6 +1626,9 @@ class ProfileDiscoveryService:
         new_turn: DiscoveryConversationTurn | None = None,
         new_interpretation: AcceptedInterpretationPacket | None = None,
     ) -> None:
+        if self._uses_file_storage:
+            self._save_file_session(session, new_turn=new_turn, new_interpretation=new_interpretation)
+            return
         record = self._session_payload(session)
         with self._session_scope() as db_session:
             self.session_repository.upsert(
@@ -1615,6 +1666,13 @@ class ProfileDiscoveryService:
                 )
 
     def _save_draft(self, draft: ProfileDraft) -> None:
+        if self._uses_file_storage:
+            payload = draft.model_dump(mode="json")
+            session_draft_path = self._file_session_dir(draft.session_id) / "drafts" / draft.draft_id / "draft.json"
+            global_draft_path = self._file_drafts_root() / draft.draft_id / "draft.json"
+            write_json_atomic(session_draft_path, payload)
+            write_json_atomic(global_draft_path, payload)
+            return
         with self._session_scope() as db_session:
             self.draft_repository.upsert(
                 db_session,
@@ -1631,8 +1689,58 @@ class ProfileDiscoveryService:
         session.status = DiscoverySessionStatus.COMPLETED
         self._save_session(session)
 
+    def _file_data_root(self) -> Path:
+        return Path(self.settings.profile_data_dir)
+
+    def _file_sessions_root(self) -> Path:
+        return self._file_data_root() / "discovery" / "sessions"
+
+    def _file_session_dir(self, session_id: str) -> Path:
+        return self._file_sessions_root() / session_id
+
+    def _file_drafts_root(self) -> Path:
+        return self._file_data_root() / "discovery" / "drafts"
+
+    def _get_file_session(self, session_id: str) -> DiscoverySession:
+        session_dir = self._file_session_dir(session_id)
+        payload = read_json(session_dir / "state.json", default=None)
+        if payload is None:
+            raise KeyError(f"Unknown discovery_session_id: {session_id}")
+        payload = dict(payload)
+        payload["conversation_turns"] = read_json_lines(session_dir / "turns.jsonl")
+        payload["interpretation_history"] = read_json_lines(session_dir / "interpretations.jsonl")
+        return DiscoverySession.model_validate(payload)
+
+    def _list_file_sessions(self, *, owner_id: str | None = None) -> list[DiscoverySession]:
+        sessions: list[DiscoverySession] = []
+        for path in sorted(self._file_sessions_root().glob("*/state.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+            payload = read_json(path, default=None)
+            if payload is None:
+                continue
+            session = DiscoverySession.model_validate(payload)
+            if owner_id is not None and session.owner_id != owner_id:
+                continue
+            sessions.append(session)
+        return sessions
+
+    def _save_file_session(
+        self,
+        session: DiscoverySession,
+        *,
+        new_turn: DiscoveryConversationTurn | None = None,
+        new_interpretation: AcceptedInterpretationPacket | None = None,
+    ) -> None:
+        session_dir = self._file_session_dir(session.session_id)
+        write_json_atomic(session_dir / "state.json", self._session_payload(session))
+        if new_turn is not None:
+            append_json_line(session_dir / "turns.jsonl", new_turn.model_dump(mode="json"))
+        if new_interpretation is not None:
+            append_json_line(session_dir / "interpretations.jsonl", new_interpretation.model_dump(mode="json"))
+
     @contextmanager
     def _session_scope(self) -> Iterator[Session]:
+        if self.session_factory is None:
+            raise RuntimeError("Database session requested while FinKernel is using file storage.")
         session = self.session_factory()
         try:
             yield session

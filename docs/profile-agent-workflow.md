@@ -43,7 +43,8 @@ That means:
 8. Read the draft and its `draft_source` packet.
 9. Use `prompts/profile_analyzer.md` to structure the evidence.
 10. Use `prompts/profile_builder.md` to write the final markdown in the investment profile template format.
-11. Confirm the draft with the final profile markdown artifact.
+11. Show the final profile markdown draft to the user.
+12. Confirm the draft with `user_confirmed=true` only after the user explicitly approves it.
 
 The host should treat steps 5 and 6 as internal orchestration steps. Do not
 turn every internal update into a user-facing status dump.
@@ -58,6 +59,10 @@ When a draft is ready, `ProfileDraft.draft_source` is the canonical source
 packet for final markdown generation. It contains the working profile snapshot,
 section coverage, accepted interpretation packets, and conversation turns needed
 by `prompts/profile_builder.md`.
+
+Do not expose internal labels such as `draft_ready`, `pending draft`, tool use,
+raw conflict notes, or raw remaining gaps in user-facing messages. Use stable
+confirmation wording such as: "信息已经足够，我会整理一版画像草稿给你确认。"
 
 ## Review flow
 

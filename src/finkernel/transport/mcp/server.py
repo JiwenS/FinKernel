@@ -168,6 +168,7 @@ def create_mcp_server(*, profile_discovery_service: ProfileDiscoveryService, pro
         profile_markdown: str | None = None,
         profile_id: str | None = None,
         display_name: str | None = None,
+        user_confirmed: bool = False,
     ) -> dict:
         profile = profile_discovery_service.confirm_draft(
             draft_id=profile_draft_id,
@@ -176,6 +177,7 @@ def create_mcp_server(*, profile_discovery_service: ProfileDiscoveryService, pro
                 display_name=display_name,
                 persona_markdown=persona_markdown,
                 profile_markdown=profile_markdown,
+                user_confirmed=user_confirmed,
             ),
         )
         return {"profile": profile.model_dump(mode="json")}

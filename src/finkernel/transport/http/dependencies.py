@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from fastapi import HTTPException, Request, status
 
-from finkernel.services.profile_discovery import DiscoveryNotReadyError, InvalidDiscoveryInterpretationError, ProfileDiscoveryService
+from finkernel.services.profile_discovery import (
+    DiscoveryNotReadyError,
+    DraftConfirmationRequiredError,
+    InvalidDiscoveryInterpretationError,
+    ProfileDiscoveryService,
+)
 from finkernel.services.profiles import InactiveProfileError, ProfileOnboardingRequiredError, ProfileStore
 
 
@@ -19,6 +24,8 @@ def raise_for_profile_error(exc: Exception) -> None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.to_detail()) from exc
     if isinstance(exc, DiscoveryNotReadyError):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"reason_code": "DISCOVERY_NOT_READY", "message": str(exc)}) from exc
+    if isinstance(exc, DraftConfirmationRequiredError):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"reason_code": "DRAFT_CONFIRMATION_REQUIRED", "message": str(exc)}) from exc
     if isinstance(exc, InvalidDiscoveryInterpretationError):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

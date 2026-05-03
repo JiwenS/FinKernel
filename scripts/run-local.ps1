@@ -106,7 +106,7 @@ function Wait-ForHttpHealth {
 $repoRoot = Resolve-RepoRoot
 $envPath = Join-Path $repoRoot ".env"
 if (-not (Test-Path $envPath)) {
-    throw "Missing .env at $envPath. Run scripts\\bootstrap-local.ps1 first."
+    throw "Missing .env at $envPath. Run scripts\\bootstrap.ps1 -Mode Server first."
 }
 
 $appPort = Get-DotEnvValue -Path $envPath -Key "APP_PORT" -Default "8000"

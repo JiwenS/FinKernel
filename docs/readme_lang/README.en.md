@@ -55,7 +55,7 @@ The product vision spans several major framework layers. Only the financial prof
 
 | Framework | What it is for | Typical outcomes | Status |
 | --- | --- | --- | --- |
-| Financial Profile Engine | Build a durable investor profile with risk preferences, constraints, memories, and human-readable markdown | `assess_persona`, risk summary, versioned profile updates | ![Live](https://img.shields.io/badge/Status-Live_Today-16A34A?style=flat-square) |
+| Financial Profile Engine | Build a durable investor profile with risk preferences, constraints, memories, and human-readable markdown | `assess_profile`, risk summary, versioned profile updates | ![Live](https://img.shields.io/badge/Status-Live_Today-16A34A?style=flat-square) |
 | News Engine | Collect and normalize news from multiple financial sources for AI retrieval | market-moving event collection, source-aware summaries, watchlists | ![Planned](https://img.shields.io/badge/Status-Planned-F59E0B?style=flat-square) |
 | Research Engine | Analyze earnings, filings, news impact, and price behavior | report digestion, event impact analysis, narrative plus signal synthesis | ![Planned](https://img.shields.io/badge/Status-Planned-F59E0B?style=flat-square) |
 | Trading Engine | Route and manage trading orders through integrated brokers and execution layers | order routing, approval flows, execution support | ![Planned](https://img.shields.io/badge/Status-Planned-F59E0B?style=flat-square) |
@@ -81,27 +81,28 @@ Everything else remains roadmap material for now, and should be communicated tha
 
 FinKernel v1 supports one official local installation path:
 
-- Docker-only
+- unified bootstrap, with Lite file storage recommended by default and
+  Docker/PostgreSQL Server mode available for advanced local service testing
 
 ### Fastest path
 
 ```powershell
 git clone https://github.com/JiwenS/FinKernel.git
 cd FinKernel
-powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-local.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1
 ```
 
 That bootstrap flow is designed to feel like a guided installer, not a raw script. It will:
 
-- guide `.env` setup one field at a time
-- ensure `config/persona-profiles.json` exists as a blank local profile store
-- start Docker services for FinKernel and PostgreSQL with pgvector
-- wait for the HTTP app and MCP endpoint to become usable
-- create a local HTTP MCP config
-- prioritize four first-class host agents: `Codex`, `Claude Code`, `OpenClaw`, and `Hermes`
-- install a FinKernel skill bundle into the selected agent's native skills directory
-- attempt agent-specific HTTP MCP registration when the corresponding CLI is available
-- fall back to a `Custom MCP client` export path for every other host runtime
+- ask whether to install Lite mode or Server mode
+- create local file-backed profile storage in Lite mode
+- create a local MCP stdio config in Lite mode
+- start Docker services for FinKernel and PostgreSQL with pgvector in Server mode
+- create a local HTTP MCP config in Server mode
+- in Server mode, prioritize four first-class host agents: `Codex`, `Claude Code`, `OpenClaw`, and `Hermes`
+- in Server mode, install a FinKernel skill bundle into the selected agent's native skills directory
+- in Server mode, attempt agent-specific HTTP MCP registration when the corresponding CLI is available
+- in Server mode, fall back to a `Custom MCP client` export path for every other host runtime
 
 ### Bring the project up again
 
@@ -138,10 +139,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-local.ps1
 ```mermaid
 flowchart LR
     A[git clone] --> B[cd FinKernel]
-    B --> C[bootstrap-local.ps1]
-    C --> D[Guided .env Setup]
-    D --> E[Docker Compose Up]
-    E --> F[Health Check and HTTP MCP Ready]
+    B --> C[bootstrap.ps1]
+    C --> D{Choose Mode}
+    D --> E[Lite File Storage and MCP stdio]
+    D --> F[Server Docker Compose and HTTP MCP]
+    E --> G[Prompt Skill MCP Injection]
     F --> G[Prompt Skill MCP Injection]
 ```
 
@@ -158,7 +160,7 @@ For deeper setup details, see:
 | Asset | Purpose |
 | --- | --- |
 | `../../SKILL.md` | Primary host-visible profile skill for building and maintaining the FinKernel profile |
-| `../../prompts/profile_assessment.md` | Prompt template keyed off `assess_persona` status values |
+| `../../prompts/profile_assessment.md` | Prompt template keyed off `assess_profile` status values |
 | `../../prompts/finkernel_system_routing.md` | System routing policy so the host reads profile context before generic finance advice |
 
 ### First-class host agents
@@ -175,13 +177,13 @@ For deeper setup details, see:
 
 | Tool | What it does |
 | --- | --- |
-| `assess_persona` | Single-entry orchestration for add/update profile flows |
+| `assess_profile` | Single-entry orchestration for add/update profile flows |
 | `get_profile_onboarding_status` | Checks whether a usable active profile exists |
 | `get_profile` | Reads the active structured persona profile |
-| `get_profile_persona_markdown` | Reads the human-readable profile markdown artifact |
+| `get_profile_markdown` | Reads the human-readable profile markdown artifact |
 | `get_profile_persona_sources` | Reads evidence, memories, and contextual rules behind the persona |
 | `get_risk_profile_summary` | Returns the compact profile summary for downstream guidance |
-| `save_profile_persona_markdown` | Saves or refreshes the profile markdown artifact |
+| `save_profile_markdown` | Saves or refreshes the profile markdown artifact |
 | `review_profile` | Starts a profile review/update flow from new evidence |
 | `append_profile_memory` | Adds new long-term or short-term memory |
 | `search_profile_memory` | Retrieves profile memory relevant to the current conversation |
@@ -202,8 +204,8 @@ For deeper setup details, see:
 ### Recommended host flow
 
 1. Call `get_profile_onboarding_status` for profile-aware investment requests.
-2. Use `assess_persona` for profile creation, continuation, or targeted updates.
-3. Read `get_profile`, `get_profile_persona_markdown`, and `get_risk_profile_summary` before advice.
+2. Use `assess_profile` for profile creation, continuation, or targeted updates.
+3. Read `get_profile`, `get_profile_markdown`, and `get_risk_profile_summary` before advice.
 4. Use memory and review tools when new information changes the user's context.
 
 ## Read This First

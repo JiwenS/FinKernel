@@ -1,6 +1,7 @@
 # Profile Assessment Prompt Template
 
-Use this template with the `assess_persona` tool.
+Use this template with the `assess_profile` tool, or the legacy
+`assess_persona` alias when a host has not migrated yet.
 
 The tool returns a `prompt_template_id` so the host agent can choose the right
 user-facing phrasing without inventing its own workflow.
@@ -51,7 +52,7 @@ Template:
    - full reassessment
    - a targeted section update
    - no changes
-4. If the user chooses a targeted section, pass the exact `choice` value back to `assess_persona`.
+4. If the user chooses a targeted section, pass the exact `choice` value back to `assess_profile`.
 
 Suggested wording:
 
@@ -73,11 +74,17 @@ Template:
 1. Explain that FinKernel has enough evidence for a confirmable draft.
 2. Read the draft, evidence, and existing profile markdown if present.
 3. Use the profile-writing prompts to refresh the final profile markdown artifact.
-4. Call `confirm_profile_draft`.
+4. Show the draft to the user and ask for confirmation or corrections.
+5. Call `confirm_profile_draft` with `user_confirmed=true` only after the user explicitly approves the shown draft.
+
+Do not expose `draft_ready`, `pending draft`, tool calls, or backend state labels
+to the user.
 
 Suggested wording:
 
-> FinKernel has enough evidence to prepare a confirmable profile draft. I will now refresh the profile markdown and confirm the new version.
+> 信息已经足够，我会整理一版画像草稿给你确认。
+>
+> 下面是画像草稿。请你确认是否保存为正式 profile，或者指出需要修改的地方。
 
 ## `persona_assessment.complete`
 

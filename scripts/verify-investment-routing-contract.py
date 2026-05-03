@@ -41,6 +41,8 @@ def main() -> None:
 
     settings = Settings(
         environment="test",
+        storage_backend="file",
+        profile_data_dir=str(tmp_dir / "routing-contract-data"),
         database_url="postgresql+psycopg://finkernel:change-me@localhost:5432/finkernel",
         enable_pgvector=True,
         profile_store_path=str(profiles_path),

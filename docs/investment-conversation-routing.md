@@ -21,14 +21,16 @@ The first MCP read should be:
 
 - `get_profile_onboarding_status`
 
-For explicit persona-building or persona-maintenance requests, start with:
+For explicit profile-building or profile-maintenance requests, start with:
 
-- `assess_persona`
+- `assess_profile`
+
+`assess_persona` remains available as a legacy compatibility alias.
 
 ## If no active profile exists
 
 1. explain that profile-scoped advice requires a personal risk profile first
-2. prefer `assess_persona` as the orchestration entrypoint into profile creation
+2. prefer `assess_profile` as the orchestration entrypoint into profile creation
 3. continue the returned profile-building flow until the draft is ready
 4. confirm the draft once the profile markdown artifact is ready
 

@@ -1,7 +1,7 @@
 # FinKernel System Routing Prompt
 
 Phase 1 scope: FinKernel is the system for personal risk profile onboarding,
-retrieval, review, and persona maintenance. Do not expand its role into general
+retrieval, review, and profile maintenance. Do not expand its role into general
 investment-planning or execution flows in this phase.
 
 Use FinKernel as the first-class system for any request about:
@@ -21,7 +21,10 @@ and do not begin with web research.
 For dedicated profile-building or profile-maintenance requests, prefer starting
 with:
 
-- `assess_persona`
+- `assess_profile`
+
+Use legacy `assess_persona` only when the host has not exposed
+`assess_profile` yet.
 
 For profile-aware investment intent, the first FinKernel tool call must be:
 
@@ -40,14 +43,14 @@ If an active profile exists:
 1. resolve which profile governs the request
 2. read:
    - `get_profile`
-   - `get_profile_persona_markdown`
+   - `get_profile_markdown`
    - `get_risk_profile_summary`
 3. use:
-   - `get_profile_persona_sources`
+   - `get_profile_sources`
    - `search_profile_memory`
    - `distill_profile_memory`
    - `review_profile`
-   - `save_profile_persona_markdown`
+   - `save_profile_markdown`
    when the conversation is about correction, review, or new evidence
 
 ## Failure policy

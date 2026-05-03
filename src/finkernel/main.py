@@ -7,6 +7,7 @@ import logging
 from fastapi import FastAPI
 
 from finkernel.config import Settings, get_settings
+from finkernel.services.file_profiles import FileProfileStore
 from finkernel.services.profile_discovery import ProfileDiscoveryService
 from finkernel.services.profiles import ProfileStore
 from finkernel.storage.database import build_session_factory, check_database, init_database
@@ -25,8 +26,12 @@ def configure_logging() -> None:
 
 
 def build_runtime(settings: Settings) -> dict:
-    session_factory = build_session_factory(settings)
-    profile_store = ProfileStore(settings, session_factory=session_factory)
+    session_factory = None
+    if settings.storage_backend == "database":
+        session_factory = build_session_factory(settings)
+        profile_store = ProfileStore(settings, session_factory=session_factory)
+    else:
+        profile_store = FileProfileStore(settings)
     profile_discovery_service = ProfileDiscoveryService(
         settings=settings,
         session_factory=session_factory,
@@ -56,9 +61,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         async with mcp_server.session_manager.run():
-            await asyncio.to_thread(init_database, session_factory, settings)
+            if settings.storage_backend == "database":
+                await asyncio.to_thread(init_database, session_factory, settings)
             await asyncio.to_thread(profile_store.bootstrap_from_seed)
-            app.state.services["database_ok"] = await asyncio.to_thread(check_database, session_factory)
+            app.state.services["storage_ok"] = await asyncio.to_thread(
+                check_database,
+                session_factory,
+            ) if settings.storage_backend == "database" else await asyncio.to_thread(profile_store.check)
+            app.state.services["database_ok"] = app.state.services["storage_ok"] if settings.storage_backend == "database" else None
             yield
 
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
@@ -67,6 +77,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.mcp_server = mcp_server
     app.state.services = {
         "settings": settings,
+        "storage_backend": settings.storage_backend,
+        "storage_ok": False,
         "database_ok": False,
         "mcp_enabled": True,
         "mcp_endpoint": f"{settings.api_prefix.rstrip('/')}/mcp",

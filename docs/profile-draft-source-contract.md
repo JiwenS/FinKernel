@@ -81,6 +81,8 @@ why a profile field was included when the user asks for provenance.
 
 - the suggested structured profile from the draft
 - the supplied final profile markdown
+- an explicit `user_confirmed=true` confirmation from the host after the user
+  approves the shown draft
 - the draft source as the audit basis available in the saved draft payload
 
 The markdown remains the user-facing artifact. The draft source remains the

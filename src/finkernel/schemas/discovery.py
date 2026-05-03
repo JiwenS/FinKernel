@@ -369,6 +369,7 @@ class ConfirmProfileDraftRequest(BaseModel):
     display_name: str | None = None
     persona_markdown: str | None = Field(default=None, min_length=1)
     profile_markdown: str | None = Field(default=None, min_length=1)
+    user_confirmed: bool = False
 
     @model_validator(mode="after")
     def require_markdown(self) -> "ConfirmProfileDraftRequest":

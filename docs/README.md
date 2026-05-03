@@ -11,6 +11,7 @@ README language mirrors live under `docs/readme_lang/`.
 Core product docs for the narrowed FinKernel scope:
 
 - `docs/setup-and-run.md`
+- `docs/local-file-storage-lite.md`
 - `docs/profile-data-model.md`
 - `docs/profile-schema-design.md`
 - `docs/profile-discovery-architecture.md`
@@ -27,7 +28,7 @@ Core product docs for the narrowed FinKernel scope:
 - `docs/PRD.md`
 - `prompts/profile_assessment.md`
 
-FinKernel is intentionally focused on personal risk profile creation, review, and retrieval, with Docker-first local installation for the first release.
+FinKernel is intentionally focused on personal risk profile creation, review, and retrieval. Lite file storage is the default individual-user path; Docker/PostgreSQL remains the optional Server mode.
 
 Use `docs/future-module-development-rules.md` as the standing development
 contract for future modules such as News, Research, Trade, Notifications, and
